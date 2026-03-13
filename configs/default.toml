@@ -1,0 +1,107 @@
+# pgpt default configuration file
+# Copy to ~/.config/pgpt/config.toml and customize
+
+# ─────────────────────────────────────────────
+# Agents – each agent binds a provider + model
+# ─────────────────────────────────────────────
+[agents.default]
+provider = "openai"
+model    = "gpt4o"
+
+[agents.claude]
+provider = "anthropic"
+model    = "claude-sonnet"
+
+[agents.gemini]
+provider = "google"
+model    = "gemini-pro"
+
+[agents.openrouter]
+provider = "openrouter"
+model    = "openrouter-default"
+
+[agents.ollama]
+provider = "ollama"
+model    = "llama3"
+
+# ─────────────────────────────────────────────
+# Providers
+# ─────────────────────────────────────────────
+
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+# base_url  = "https://api.openai.com/v1"  # default; override if needed
+
+[providers.anthropic]
+api_key_env = "ANTHROPIC_API_KEY"
+# base_url  = "https://api.anthropic.com"  # default
+
+[providers.google]
+api_key_env = "GOOGLE_API_KEY"
+# base_url  = "https://generativelanguage.googleapis.com"  # default
+
+[providers.openrouter]
+api_key_env = "OPENROUTER_API_KEY"
+base_url    = "https://openrouter.ai/api/v1"
+
+[providers.ollama]
+# No API key required for local Ollama
+base_url = "http://localhost:11434/v1"
+
+# ─────────────────────────────────────────────
+# Models
+# ─────────────────────────────────────────────
+
+[models.gpt4o]
+model_id    = "gpt-4o"
+max_tokens  = 4096
+temperature = 1.0
+top_p       = 1.0
+
+[models.gpt4o-mini]
+model_id    = "gpt-4o-mini"
+max_tokens  = 4096
+temperature = 1.0
+top_p       = 1.0
+
+[models.gpt35]
+model_id    = "gpt-3.5-turbo"
+max_tokens  = 2048
+temperature = 1.0
+top_p       = 1.0
+
+[models.claude-sonnet]
+model_id    = "claude-3-5-sonnet-20241022"
+max_tokens  = 8192
+temperature = 1.0
+top_p       = 1.0
+
+[models.claude-haiku]
+model_id    = "claude-3-5-haiku-20241022"
+max_tokens  = 8192
+temperature = 1.0
+top_p       = 1.0
+
+[models.gemini-pro]
+model_id    = "gemini-1.5-pro"
+max_tokens  = 8192
+temperature = 1.0
+top_p       = 1.0
+
+[models.openrouter-default]
+model_id    = "openai/gpt-4o"
+max_tokens  = 4096
+temperature = 1.0
+top_p       = 1.0
+
+[models.llama3]
+model_id    = "llama3"
+max_tokens  = 4096
+temperature = 0.8
+top_p       = 0.95
+
+[models.mistral]
+model_id    = "mistral"
+max_tokens  = 4096
+temperature = 0.8
+top_p       = 0.95
