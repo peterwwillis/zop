@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# Only allow one release workflow per tag to run at a time.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
