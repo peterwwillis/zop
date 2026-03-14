@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/peterwwillis/pgpt/internal/chat"
+	"github.com/peterwwillis/zop/internal/chat"
 )
 
 func newChatCmd(gf *globalFlags) *cobra.Command {

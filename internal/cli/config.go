@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/peterwwillis/pgpt/internal/config"
+	"github.com/peterwwillis/zop/internal/config"
 )
 
 func newConfigCmd(gf *globalFlags) *cobra.Command {

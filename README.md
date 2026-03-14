@@ -1,16 +1,16 @@
-# pgpt
-PowerGPT: A CLI tool for AI users
+# zop
+zop: A CLI tool for AI users
 
 ## Overview
 
-`pgpt` is a multi-provider AI CLI tool written in Go. It supports OpenAI, Anthropic,
+`zop` is a multi-provider AI CLI tool written in Go. It supports OpenAI, Anthropic,
 Google Gemini, OpenRouter, and Ollama (any OpenAI-compatible endpoint), and optionally
 voice input via a Whisper build tag.
 
 ## Features
 
 - **Multiple providers**: OpenAI, Anthropic (Claude), Google (Gemini), OpenRouter, Ollama
-- **TOML config**: Define multiple named *agents*, *providers*, and *models* in `~/.config/pgpt/config.toml`
+- **TOML config**: Define multiple named *agents*, *providers*, and *models* in `~/.config/zop/config.toml`
 - **Chat sessions**: Persistent multi-turn conversations stored locally
 - **Streaming**: Real-time token streaming via `--stream`
 - **Voice input** *(optional build)*: `--voice` flag for microphone input via Whisper
@@ -18,32 +18,32 @@ voice input via a Whisper build tag.
 ## Installation
 
 ```sh
-go install github.com/peterwwillis/pgpt/cmd/pgpt@latest
+go install github.com/peterwwillis/zop/cmd/zop@latest
 ```
 
-Or download a pre-built binary from the [Releases](https://github.com/peterwwillis/pgpt/releases) page.
+Or download a pre-built binary from the [Releases](https://github.com/peterwwillis/zop/releases) page.
 
 ## Quick Start
 
 ```sh
 # Simple query (uses "default" agent from config)
-pgpt "What is the capital of France?"
+zop "What is the capital of France?"
 
 # Pipe from stdin
-echo "Explain recursion" | pgpt
+echo "Explain recursion" | zop
 
 # Use a specific agent
-pgpt --agent claude "Summarise this text"
+zop --agent claude "Summarise this text"
 
 # Multi-turn chat session
-pgpt --chat my-chat "Start a conversation"
-pgpt --chat my-chat "Follow up question"
+zop --chat my-chat "Start a conversation"
+zop --chat my-chat "Follow up question"
 
 # Stream the response
-pgpt --stream "Write a haiku about Go"
+zop --stream "Write a haiku about Go"
 
 # Voice input (requires whisper build tag)
-pgpt --voice
+zop --voice
 ```
 
 ## Configuration
@@ -51,8 +51,8 @@ pgpt --voice
 Copy the built-in default config as a starting point:
 
 ```sh
-mkdir -p ~/.config/pgpt
-cp configs/default.toml ~/.config/pgpt/config.toml
+mkdir -p ~/.config/zop
+cp configs/default.toml ~/.config/zop/config.toml
 ```
 
 Then set your API key environment variables:
@@ -97,9 +97,9 @@ providers, and models.
 ## Chat Sessions
 
 ```sh
-pgpt chat list              # list all sessions
-pgpt chat show my-chat      # show messages in a session
-pgpt chat delete my-chat    # delete a session
+zop chat list              # list all sessions
+zop chat show my-chat      # show messages in a session
+zop chat delete my-chat    # delete a session
 ```
 
 ## Building with Whisper Support
@@ -108,12 +108,12 @@ Whisper voice-input support is gated behind a build tag so that users who
 don't need it avoid the CGo dependency:
 
 ```sh
-go build -tags whisper -o pgpt ./cmd/pgpt
+go build -tags whisper -o zop ./cmd/zop
 ```
 
 Requires the [whisper.cpp](https://github.com/ggerganov/whisper.cpp) library
-and a Whisper model file.  Set `PGPT_WHISPER_MODEL` to point to the model path
-(default: `~/.local/share/pgpt/whisper/ggml-base.en.bin`).
+and a Whisper model file.  Set `ZOP_WHISPER_MODEL` to point to the model path
+(default: `~/.local/share/zop/whisper/ggml-base.en.bin`).
 
 ## Development
 

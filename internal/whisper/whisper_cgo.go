@@ -7,8 +7,8 @@
 //
 // This implementation uses the whisper.cpp C library via CGo.
 // See https://github.com/ggerganov/whisper.cpp for installation instructions.
-// The whisper model file path can be set with PGPT_WHISPER_MODEL (defaults to
-// ~/.local/share/pgpt/whisper/ggml-base.en.bin).
+// The whisper model file path can be set with ZOP_WHISPER_MODEL (defaults to
+// ~/.local/share/zop/whisper/ggml-base.en.bin).
 // If the model file does not exist at that path, it is downloaded automatically
 // from https://huggingface.co/ggerganov/whisper.cpp.
 package whisper
@@ -33,16 +33,16 @@ import (
 const defaultModelURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
 
 // defaultModelPath returns the path where the Whisper model should live.
-// Override with PGPT_WHISPER_MODEL.
+// Override with ZOP_WHISPER_MODEL.
 func defaultModelPath() string {
-	if p := os.Getenv("PGPT_WHISPER_MODEL"); p != "" {
+	if p := os.Getenv("ZOP_WHISPER_MODEL"); p != "" {
 		return p
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "ggml-base.en.bin"
 	}
-	return filepath.Join(home, ".local", "share", "pgpt", "whisper", "ggml-base.en.bin")
+	return filepath.Join(home, ".local", "share", "zop", "whisper", "ggml-base.en.bin")
 }
 
 // ensureModel makes sure the model file exists at path.  If it does not, it
@@ -52,7 +52,7 @@ func ensureModel(path string) error {
 		return nil // already present
 	}
 
-	fmt.Fprintf(os.Stderr, "[pgpt] Whisper model not found at %q – downloading from %s …\n", path, defaultModelURL)
+	fmt.Fprintf(os.Stderr, "[zop] Whisper model not found at %q – downloading from %s …\n", path, defaultModelURL)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("creating model directory: %w", err)
@@ -89,7 +89,7 @@ func ensureModel(path string) error {
 		return fmt.Errorf("installing model: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[pgpt] Whisper model saved to %q\n", path)
+	fmt.Fprintf(os.Stderr, "[zop] Whisper model saved to %q\n", path)
 	return nil
 }
 

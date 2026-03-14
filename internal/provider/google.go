@@ -8,7 +8,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/peterwwillis/pgpt/internal/config"
+	"github.com/peterwwillis/zop/internal/config"
 )
 
 const googleDefaultBase = "https://generativelanguage.googleapis.com"

@@ -1,4 +1,4 @@
-// Package cli implements the pgpt command-line interface.
+// Package cli implements the zop command-line interface.
 package cli
 
 import (
@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/peterwwillis/pgpt/internal/chat"
-	"github.com/peterwwillis/pgpt/internal/config"
-	"github.com/peterwwillis/pgpt/internal/provider"
-	"github.com/peterwwillis/pgpt/internal/whisper"
+	"github.com/peterwwillis/zop/internal/chat"
+	"github.com/peterwwillis/zop/internal/config"
+	"github.com/peterwwillis/zop/internal/provider"
+	"github.com/peterwwillis/zop/internal/whisper"
 )
 
 // Execute runs the root command with the provided arguments.
@@ -36,20 +36,20 @@ func newRootCmd() *cobra.Command {
 	gf := &globalFlags{}
 
 	root := &cobra.Command{
-		Use:   "pgpt [flags] [prompt]",
-		Short: "PowerGPT – an AI CLI tool",
-		Long: `pgpt (PowerGPT) is a multi-provider AI assistant for the command line.
+		Use:   "zop [flags] [prompt]",
+		Short: "zop – an AI CLI tool",
+		Long: `zop is a multi-provider AI assistant for the command line.
 
 Supported providers: openai, anthropic, google, openrouter, ollama.
 
 The prompt can be supplied as:
-  - Command-line argument:  pgpt "hello"
-  - Standard input (pipe):  echo "hello" | pgpt
-  - Microphone (if compiled with -tags whisper):  pgpt --voice`,
-		Example: `  pgpt "What is the capital of France?"
-  echo "Explain recursion" | pgpt
-  pgpt --agent claude "Review this code"
-  pgpt --chat mysession "Continue our conversation"`,
+  - Command-line argument:  zop "hello"
+  - Standard input (pipe):  echo "hello" | zop
+  - Microphone (if compiled with -tags whisper):  zop --voice`,
+		Example: `  zop "What is the capital of France?"
+  echo "Explain recursion" | zop
+  zop --agent claude "Review this code"
+  zop --chat mysession "Continue our conversation"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCompletion(cmd, args, gf)
 		},
@@ -57,7 +57,7 @@ The prompt can be supplied as:
 	}
 
 	// Global flags
-	root.PersistentFlags().StringVarP(&gf.configFile, "config", "C", "", "config file (default: ~/.config/pgpt/config.toml)")
+	root.PersistentFlags().StringVarP(&gf.configFile, "config", "C", "", "config file (default: ~/.config/zop/config.toml)")
 	root.PersistentFlags().StringVarP(&gf.agent, "agent", "a", "default", "agent to use (defined in config)")
 	root.PersistentFlags().BoolVarP(&gf.verbose, "verbose", "v", false, "verbose output")
 
@@ -103,7 +103,7 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	}
 
 	if gf.verbose {
-		fmt.Fprintf(os.Stderr, "[pgpt] agent=%s provider=%s model=%s\n",
+		fmt.Fprintf(os.Stderr, "[zop] agent=%s provider=%s model=%s\n",
 			gf.agent, agent.Provider, modelCfg.ModelID)
 	}
 
@@ -177,7 +177,7 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	// Warn (but don't hard-fail) when a provider expects an API key and none is set.
 	// Providers like Ollama legitimately have no key requirement.
 	if provCfg.APIKeyEnv != "" && provCfg.APIKey() == "" {
-		fmt.Fprintf(os.Stderr, "[pgpt] warning: environment variable %s is not set\n", provCfg.APIKeyEnv)
+		fmt.Fprintf(os.Stderr, "[zop] warning: environment variable %s is not set\n", provCfg.APIKeyEnv)
 	}
 
 	req := provider.CompletionRequest{
@@ -203,7 +203,7 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	if chatName != "" && sessionMgr != nil {
 		messages = append(messages, provider.Message{Role: "assistant", Content: resp.Content})
 		if err := sessionMgr.Save(chatName, messages); err != nil {
-			fmt.Fprintf(os.Stderr, "[pgpt] warning: could not save session: %v\n", err)
+			fmt.Fprintf(os.Stderr, "[zop] warning: could not save session: %v\n", err)
 		}
 	}
 

@@ -1,4 +1,4 @@
-module github.com/peterwwillis/pgpt
+module github.com/peterwwillis/zop
 
 go 1.24.13
 

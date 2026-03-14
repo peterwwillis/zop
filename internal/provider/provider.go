@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/peterwwillis/pgpt/internal/config"
+	"github.com/peterwwillis/zop/internal/config"
 )
 
 // Message represents a single conversation turn.

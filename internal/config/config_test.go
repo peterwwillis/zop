@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/peterwwillis/pgpt/internal/config"
+	"github.com/peterwwillis/zop/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,5 +79,5 @@ func TestProviderAPIKey(t *testing.T) {
 func TestDefaultConfigPath(t *testing.T) {
 	path := config.DefaultConfigPath()
 	assert.NotEmpty(t, path)
-	assert.Contains(t, path, "pgpt")
+	assert.Contains(t, path, "zop")
 }

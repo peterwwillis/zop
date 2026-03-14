@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/peterwwillis/pgpt/internal/cli"
+	"github.com/peterwwillis/zop/internal/cli"
 )
 
 // executeCmd is a test helper that runs Execute with captured output.
@@ -24,7 +24,7 @@ func executeCmd(t *testing.T, args []string) (string, error) {
 
 func TestVersionCommand(t *testing.T) {
 	// Build a minimal command tree for testing.
-	root := &cobra.Command{Use: "pgpt", SilenceUsage: true}
+	root := &cobra.Command{Use: "zop", SilenceUsage: true}
 	var out bytes.Buffer
 	root.SetOut(&out)
 

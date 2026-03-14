@@ -1,5 +1,5 @@
-# pgpt default configuration file
-# Copy to ~/.config/pgpt/config.toml and customize
+# zop default configuration file
+# Copy to ~/.config/zop/config.toml and customize
 
 # ─────────────────────────────────────────────
 # Agents – each agent binds a provider + model

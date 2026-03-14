@@ -8,7 +8,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
-	"github.com/peterwwillis/pgpt/internal/config"
+	"github.com/peterwwillis/zop/internal/config"
 )
 
 // openAICompatibleProvider handles OpenAI, OpenRouter, and Ollama backends

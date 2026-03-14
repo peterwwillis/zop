@@ -1,4 +1,4 @@
-// Package chat provides conversation session management for pgpt.
+// Package chat provides conversation session management for zop.
 package chat
 
 import (
@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/peterwwillis/pgpt/internal/provider"
+	"github.com/peterwwillis/zop/internal/provider"
 )
 
 // validNameRegex is the regexp that session names must satisfy.
@@ -29,7 +29,7 @@ func NewManager(dir string) (*Manager, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolving cache dir: %w", err)
 		}
-		dir = filepath.Join(cache, "pgpt", "sessions")
+		dir = filepath.Join(cache, "zop", "sessions")
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("creating session dir: %w", err)

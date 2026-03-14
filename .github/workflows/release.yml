@@ -73,7 +73,7 @@ jobs:
         id: binary
         shell: bash
         run: |
-          NAME="pgpt-${{ matrix.goos }}-${{ matrix.goarch }}"
+          NAME="zop-${{ matrix.goos }}-${{ matrix.goarch }}"
           if [ "${{ matrix.goarm }}" != "" ]; then
             NAME="${NAME}v${{ matrix.goarm }}"
           fi
@@ -90,9 +90,9 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           go build \
-            -ldflags="-s -w -X github.com/peterwwillis/pgpt/internal/cli.Version=${{ github.ref_name }}" \
+            -ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=${{ github.ref_name }}" \
             -o "${{ steps.binary.outputs.name }}" \
-            ./cmd/pgpt
+            ./cmd/zop
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

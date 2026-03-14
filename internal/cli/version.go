@@ -13,9 +13,9 @@ var Version = "dev"
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print the pgpt version",
+		Short: "Print the zop version",
 		Run: func(cmd *cobra.Command, _ []string) {
-			fmt.Fprintf(cmd.OutOrStdout(), "pgpt %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+			fmt.Fprintf(cmd.OutOrStdout(), "zop %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
 		},
 	}
 }

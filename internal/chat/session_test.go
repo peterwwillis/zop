@@ -3,8 +3,8 @@ package chat_test
 import (
 	"testing"
 
-	"github.com/peterwwillis/pgpt/internal/chat"
-	"github.com/peterwwillis/pgpt/internal/provider"
+	"github.com/peterwwillis/zop/internal/chat"
+	"github.com/peterwwillis/zop/internal/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

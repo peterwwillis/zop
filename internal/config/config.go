@@ -1,4 +1,4 @@
-// Package config handles loading and validating pgpt configuration from TOML files.
+// Package config handles loading and validating zop configuration from TOML files.
 package config
 
 import (
@@ -48,13 +48,13 @@ type Config struct {
 // DefaultConfigPath returns the OS-appropriate default config file path.
 func DefaultConfigPath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "pgpt", "config.toml")
+		return filepath.Join(xdg, "zop", "config.toml")
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "config.toml"
 	}
-	return filepath.Join(home, ".config", "pgpt", "config.toml")
+	return filepath.Join(home, ".config", "zop", "config.toml")
 }
 
 // Load reads a TOML config file and returns a *Config.
