@@ -1,11 +1,18 @@
 name: Test
 
 on:
+  # Run on direct pushes to the default branch only (not feature branches, to
+  # avoid a double-run when the same commit is also covered by a pull_request
+  # event from an open PR).
   push:
-    branches: ["**"]
+    branches: [main]
     tags-ignore: ["v*"]
   pull_request:
-    branches: ["**"]
+
+# Cancel any in-progress run for the same ref so we never queue up stale runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -17,7 +24,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          # On Linux collect a coverage profile; on Windows omit it to avoid a
+          # PowerShell/Go incompatibility where `-coverprofile=coverage.out ./...`
+          # causes Go to try to build ".out" as a package.
+          - os: ubuntu-latest
+            test_args: "-race -coverprofile=coverage.out"
+          - os: windows-latest
+            test_args: "-race"
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +49,7 @@ jobs:
         run: go vet ./...
 
       - name: Test
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test ${{ matrix.test_args }} ./...
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
