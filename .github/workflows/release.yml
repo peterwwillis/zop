@@ -74,6 +74,13 @@ jobs:
             tags: ""
             suffix: "-nowhisper"
             whisper: false
+          # Android (arm64 only; 386/amd64/arm require CGO for Android and are excluded)
+          - goos: android
+            goarch: arm64
+            cgo: "0"
+            tags: ""
+            suffix: ""
+            whisper: false
           # macOS builds are intentionally excluded until a self-hosted runner is provided.
 
     steps:
