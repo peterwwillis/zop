@@ -60,7 +60,7 @@ jobs:
           retention-days: 7
 
   android:
-    name: Android cross-compilation (android/arm64)
+    name: Android (zoplib tests + android/arm64 compile check)
     runs-on: ubuntu-slim
 
     steps:
@@ -75,14 +75,20 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Build for Android (arm64)
+      # Run zoplib unit tests on the host (fast; no Android device needed).
+      - name: Test zoplib
+        run: go test -race ./internal/zoplib/
+
+      # Verify the CLI still cross-compiles cleanly for android/arm64.
+      - name: Cross-compile CLI for Android (arm64)
         env:
           GOOS: android
           GOARCH: arm64
           CGO_ENABLED: "0"
-        run: go build -o zop-android-arm64 ./cmd/zop
+        run: go build -o /dev/null ./cmd/zop
 
-      - name: Compile tests for Android (arm64)
+      # Verify test binaries for all tested packages compile for android/arm64.
+      - name: Cross-compile tests for Android (arm64)
         env:
           GOOS: android
           GOARCH: arm64
@@ -91,3 +97,4 @@ jobs:
           go test -c -o /dev/null ./internal/chat/
           go test -c -o /dev/null ./internal/cli/
           go test -c -o /dev/null ./internal/config/
+          go test -c -o /dev/null ./internal/zoplib/

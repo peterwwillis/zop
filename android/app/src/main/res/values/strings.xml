@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zop AI</string>
+    <string name="send">Send</string>
+    <string name="hint_prompt">Enter your prompt…</string>
+    <string name="menu_settings">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="hint_api_key">API Key</string>
+    <string name="hint_base_url">Base URL (leave blank for OpenAI)</string>
+    <string name="hint_model">Model (e.g. gpt-4o)</string>
+    <string name="hint_system_prompt">System prompt (optional)</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="msg_no_api_key">No API key set. Open Settings to configure.</string>
+    <string name="msg_empty_prompt">Please enter a prompt.</string>
+    <string name="label_you">You</string>
+    <string name="label_zop">Zop</string>
+    <string name="label_error">Error</string>
+</resources>

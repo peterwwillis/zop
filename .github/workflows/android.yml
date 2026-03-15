@@ -1,0 +1,87 @@
+name: Android
+
+on:
+  push:
+    branches: [main]
+    tags-ignore: ["v*"]
+  pull_request:
+
+# Cancel in-progress runs for the same ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Go is needed both to run gomobile bind and to build the Go library.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      # Run the Go unit tests for zoplib before building the Android artifacts.
+      - name: Test zoplib
+        run: go test -race ./internal/zoplib/
+
+      # Install Android SDK build tools and NDK required by gomobile.
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --sdk_root="$ANDROID_HOME" \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;27.2.12479018" < /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      # Build the Android AAR from the Go library.
+      - name: Build Go library (zoplib.aar)
+        run: |
+          mkdir -p android/app/libs
+          gomobile bind \
+            -o android/app/libs/zoplib.aar \
+            -target android \
+            -androidapi 21 \
+            github.com/peterwwillis/zop/internal/zoplib
+
+      # Build the debug APK.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Build debug APK
+        run: gradle -p android assembleDebug
+
+      # Run host-side (JVM) unit tests.
+      - name: Run Android unit tests
+        run: gradle -p android test
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zop-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
