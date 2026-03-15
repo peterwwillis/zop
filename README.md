@@ -4,8 +4,8 @@ zop: A CLI tool for AI users
 ## Overview
 
 `zop` is a multi-provider AI CLI tool written in Go. It supports OpenAI, Anthropic,
-Google Gemini, OpenRouter, and Ollama (any OpenAI-compatible endpoint), and optionally
-voice input via a Whisper build tag.
+Google Gemini, OpenRouter, and Ollama (any OpenAI-compatible endpoint), plus
+voice input via Whisper in whisper-enabled builds.
 
 ## Features
 
@@ -13,7 +13,7 @@ voice input via a Whisper build tag.
 - **TOML config**: Define multiple named *agents*, *providers*, and *models* in `~/.config/zop/config.toml`
 - **Chat sessions**: Persistent multi-turn conversations stored locally
 - **Streaming**: Real-time token streaming via `--stream`
-- **Voice input** *(optional build)*: `--voice` flag for microphone input via Whisper
+- **Voice input** *(whisper-enabled builds)*: `--voice` flag for microphone input via Whisper
 
 ## Installation
 
@@ -42,7 +42,7 @@ zop --chat my-chat "Follow up question"
 # Stream the response
 zop --stream "Write a haiku about Go"
 
-# Voice input (requires whisper build tag)
+# Voice input (whisper-enabled build)
 zop --voice
 ```
 
@@ -104,16 +104,19 @@ zop chat delete my-chat    # delete a session
 
 ## Building with Whisper Support
 
-Whisper voice-input support is gated behind a build tag so that users who
-don't need it avoid the CGo dependency:
+Whisper voice-input support is enabled in whisper-capable release binaries. To
+build from source with Whisper support enabled:
 
 ```sh
 go build -tags whisper -o zop ./cmd/zop
 ```
 
 Requires the [whisper.cpp](https://github.com/ggerganov/whisper.cpp) library
-and a Whisper model file.  Set `ZOP_WHISPER_MODEL` to point to the model path
+and a Whisper model file. Set `ZOP_WHISPER_MODEL` to point to the model path
 (default: `~/.local/share/zop/whisper/ggml-base.en.bin`).
+
+To build a smaller binary without Whisper support, omit the build tag (or grab
+release artifacts suffixed with `-nowhisper`).
 
 ## Development
 

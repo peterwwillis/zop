@@ -42,19 +42,38 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux
+          # Linux (whisper-enabled default + no-whisper variant)
           - goos: linux
             goarch: amd64
+            cgo: "1"
+            tags: "whisper"
+            suffix: ""
+            whisper: true
+          - goos: linux
+            goarch: amd64
+            cgo: "0"
+            tags: ""
+            suffix: "-nowhisper"
+            whisper: false
           - goos: linux
             goarch: arm64
-          - goos: linux
-            goarch: arm
-            goarm: "7"
-          # Windows
+            cgo: "0"
+            tags: ""
+            suffix: "-nowhisper"
+            whisper: false
+          # Windows (no-whisper only for now)
           - goos: windows
             goarch: amd64
+            cgo: "0"
+            tags: ""
+            suffix: "-nowhisper"
+            whisper: false
           - goos: windows
             goarch: arm64
+            cgo: "0"
+            tags: ""
+            suffix: "-nowhisper"
+            whisper: false
           # macOS builds are intentionally excluded until a self-hosted runner is provided.
 
     steps:
@@ -77,19 +96,34 @@ jobs:
           if [ "${{ matrix.goarm }}" != "" ]; then
             NAME="${NAME}v${{ matrix.goarm }}"
           fi
+          if [ "${{ matrix.suffix }}" != "" ]; then
+            NAME="${NAME}${{ matrix.suffix }}"
+          fi
           if [ "${{ matrix.goos }}" = "windows" ]; then
             NAME="${NAME}.exe"
           fi
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch whisper.cpp
+        if: ${{ matrix.whisper }}
+        run: |
+          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
+          make -C internal/whisper/whisper.cpp libwhisper.a
 
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-          CGO_ENABLED: "0"
+          CGO_ENABLED: ${{ matrix.cgo }}
         run: |
+          TAGS="${{ matrix.tags }}"
+          TAG_ARGS=()
+          if [ -n "$TAGS" ]; then
+            TAG_ARGS=(-tags "$TAGS")
+          fi
           go build \
+            "${TAG_ARGS[@]}" \
             -ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=${{ github.ref_name }}" \
             -o "${{ steps.binary.outputs.name }}" \
             ./cmd/zop

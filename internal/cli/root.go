@@ -45,7 +45,7 @@ Supported providers: openai, anthropic, google, openrouter, ollama.
 The prompt can be supplied as:
   - Command-line argument:  zop "hello"
   - Standard input (pipe):  echo "hello" | zop
-  - Microphone (if compiled with -tags whisper):  zop --voice`,
+  - Microphone (whisper-enabled builds):  zop --voice`,
 		Example: `  zop "What is the capital of France?"
   echo "Explain recursion" | zop
   zop --agent claude "Review this code"
@@ -65,7 +65,7 @@ The prompt can be supplied as:
 	root.Flags().StringP("chat", "c", "", "chat session name for multi-turn conversations")
 	root.Flags().StringP("system", "S", "", "system prompt override")
 	root.Flags().BoolP("stream", "s", false, "stream response to stdout")
-	root.Flags().BoolP("voice", "V", false, "record prompt from microphone (requires -tags whisper)")
+	root.Flags().BoolP("voice", "V", false, "record prompt from microphone (requires whisper-enabled build)")
 
 	// Subcommands
 	root.AddCommand(newChatCmd(gf))

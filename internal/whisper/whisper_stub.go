@@ -8,7 +8,7 @@ package whisper
 import "errors"
 
 // ErrNotBuiltIn is returned when Whisper support was not compiled in.
-var ErrNotBuiltIn = errors.New("whisper support not compiled in (rebuild with -tags whisper)")
+var ErrNotBuiltIn = errors.New("whisper support not compiled in (download a whisper-enabled release or rebuild with -tags whisper)")
 
 // RecordAndTranscribe records audio from the microphone and returns the
 // transcribed text.  This stub always returns ErrNotBuiltIn.
