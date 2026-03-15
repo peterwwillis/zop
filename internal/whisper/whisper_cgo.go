@@ -13,8 +13,9 @@
 // from https://huggingface.co/ggerganov/whisper.cpp.
 package whisper
 
-// #cgo CFLAGS: -I${SRCDIR}/whisper.cpp
-// #cgo LDFLAGS: -L${SRCDIR}/whisper.cpp -lwhisper -lm -lstdc++
+// #cgo CFLAGS: -I${SRCDIR}/whisper.cpp/include
+// #cgo LDFLAGS: -L${SRCDIR}/whisper.cpp/build/src -L${SRCDIR}/whisper.cpp/build/ggml/src -lwhisper -lggml -lggml-base -lggml-cpu -lm -lstdc++
+// #cgo linux LDFLAGS: -fopenmp
 // #include "whisper.h"
 import "C"
 

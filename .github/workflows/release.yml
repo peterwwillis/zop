@@ -108,7 +108,14 @@ jobs:
         if: ${{ matrix.whisper }}
         run: |
           git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
-          make -C internal/whisper/whisper.cpp libwhisper.a
+          cmake -S internal/whisper/whisper.cpp \
+            -B internal/whisper/whisper.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=OFF \
+            -DWHISPER_BUILD_SERVER=OFF
+          cmake --build internal/whisper/whisper.cpp/build --target whisper
 
       - name: Build
         env:
