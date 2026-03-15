@@ -7,6 +7,7 @@
 [agents.default]
 provider = "openai"
 model    = "gpt4o"
+# system_prompt = "You are a helpful assistant."
 
 [agents.claude]
 provider = "anthropic"
@@ -57,6 +58,7 @@ model_id    = "gpt-4o"
 max_tokens  = 4096
 temperature = 1.0
 top_p       = 1.0
+# system_prompt = "You are a helpful assistant."
 
 [models.gpt4o-mini]
 model_id    = "gpt-4o-mini"

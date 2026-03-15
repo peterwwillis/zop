@@ -11,12 +11,15 @@ import (
 )
 
 func TestDefaultConfig(t *testing.T) {
-	cfg, err := config.Load("/nonexistent/path/config.toml")
+	path := tempConfigPath(t)
+	cfg, err := config.Load(path)
 	require.NoError(t, err)
 	assert.NotNil(t, cfg)
 	assert.Contains(t, cfg.Agents, "default")
 	assert.Contains(t, cfg.Providers, "openai")
 	assert.Contains(t, cfg.Models, "gpt4o")
+	_, err = os.Stat(path)
+	require.NoError(t, err)
 }
 
 func TestLoadTOML(t *testing.T) {
@@ -24,6 +27,7 @@ func TestLoadTOML(t *testing.T) {
 [agents.myagent]
 provider = "openai"
 model    = "gpt4o"
+system_prompt = "Be concise."
 
 [providers.openai]
 api_key_env = "OPENAI_API_KEY"
@@ -33,6 +37,7 @@ model_id    = "gpt-4o"
 max_tokens  = 2048
 temperature = 0.7
 top_p       = 1.0
+system_prompt = "You are a test model."
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -45,23 +50,25 @@ top_p       = 1.0
 	require.NoError(t, err)
 	assert.Equal(t, "openai", agent.Provider)
 	assert.Equal(t, "gpt4o", agent.Model)
+	assert.Equal(t, "Be concise.", agent.SystemPrompt)
 
 	model, err := cfg.GetModel("gpt4o")
 	require.NoError(t, err)
 	assert.Equal(t, "gpt-4o", model.ModelID)
 	assert.Equal(t, 2048, model.MaxTokens)
 	assert.InDelta(t, 0.7, model.Temperature, 0.001)
+	assert.Equal(t, "You are a test model.", model.SystemPrompt)
 }
 
 func TestGetAgentNotFound(t *testing.T) {
-	cfg, err := config.Load("/nonexistent/path/config.toml")
+	cfg, err := config.Load(tempConfigPath(t))
 	require.NoError(t, err)
 	_, err = cfg.GetAgent("nonexistent")
 	assert.Error(t, err)
 }
 
 func TestGetModelNotFound(t *testing.T) {
-	cfg, err := config.Load("/nonexistent/path/config.toml")
+	cfg, err := config.Load(tempConfigPath(t))
 	require.NoError(t, err)
 	_, err = cfg.GetModel("nonexistent")
 	assert.Error(t, err)
@@ -69,7 +76,7 @@ func TestGetModelNotFound(t *testing.T) {
 
 func TestProviderAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-key-123")
-	cfg, err := config.Load("/nonexistent/path/config.toml")
+	cfg, err := config.Load(tempConfigPath(t))
 	require.NoError(t, err)
 	p, err := cfg.GetProvider("openai")
 	require.NoError(t, err)
@@ -80,4 +87,9 @@ func TestDefaultConfigPath(t *testing.T) {
 	path := config.DefaultConfigPath()
 	assert.NotEmpty(t, path)
 	assert.Contains(t, path, "zop")
+}
+
+func tempConfigPath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "config.toml")
 }

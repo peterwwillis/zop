@@ -2,7 +2,9 @@
 package cli
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -43,17 +45,22 @@ func newRootCmd() *cobra.Command {
 Supported providers: openai, anthropic, google, openrouter, ollama.
 
 The prompt can be supplied as:
+  - Prompt flag:  zop -p "hello"
   - Command-line argument:  zop "hello"
   - Standard input (pipe):  echo "hello" | zop
-  - Microphone (if compiled with -tags whisper):  zop --voice`,
-		Example: `  zop "What is the capital of France?"
+  - Microphone (if compiled with -tags whisper):  zop --voice
+
+Interactive sessions keep a chat open for multiple prompts:  zop --interactive`,
+		Example: `  zop -p "What is the capital of France?"
   echo "Explain recursion" | zop
   zop --agent claude "Review this code"
-  zop --chat mysession "Continue our conversation"`,
+  zop --chat mysession "Continue our conversation"
+  zop --interactive --chat mysession`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCompletion(cmd, args, gf)
 		},
 		SilenceUsage: true,
+		Args:         cobra.ArbitraryArgs,
 	}
 
 	// Global flags
@@ -63,7 +70,9 @@ The prompt can be supplied as:
 
 	// Completion-specific flags (attached to root so they appear in help)
 	root.Flags().StringP("chat", "c", "", "chat session name for multi-turn conversations")
+	root.Flags().StringP("prompt", "p", "", "prompt to send (default: read from stdin)")
 	root.Flags().StringP("system", "S", "", "system prompt override")
+	root.Flags().BoolP("interactive", "i", false, "interactive chat session")
 	root.Flags().BoolP("stream", "s", false, "stream response to stdout")
 	root.Flags().BoolP("voice", "V", false, "record prompt from microphone (requires -tags whisper)")
 
@@ -102,49 +111,64 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		return err
 	}
 
+	out := cmd.OutOrStdout()
+	errOut := cmd.ErrOrStderr()
+
 	if gf.verbose {
-		fmt.Fprintf(os.Stderr, "[zop] agent=%s provider=%s model=%s\n",
+		fmt.Fprintf(errOut, "[zop] agent=%s provider=%s model=%s\n",
 			gf.agent, agent.Provider, modelCfg.ModelID)
 	}
 
-	// Build prompt
 	voice, _ := cmd.Flags().GetBool("voice")
-	var prompt string
+	promptFlag, _ := cmd.Flags().GetString("prompt")
+	interactive, _ := cmd.Flags().GetBool("interactive")
 
-	switch {
-	case voice:
-		prompt, err = whisper.RecordAndTranscribe()
-		if err != nil {
-			return fmt.Errorf("voice input: %w", err)
-		}
-	case len(args) > 0:
-		prompt = strings.Join(args, " ")
-	default:
-		// Try reading from stdin
-		stat, _ := os.Stdin.Stat()
-		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			data, rerr := io.ReadAll(os.Stdin)
-			if rerr != nil {
-				return fmt.Errorf("reading stdin: %w", rerr)
-			}
-			prompt = strings.TrimRight(string(data), "\n")
-		}
+	if voice && promptFlag != "" {
+		return fmt.Errorf("cannot use --voice with --prompt")
+	}
+	if voice && len(args) > 0 {
+		return fmt.Errorf("cannot use --voice with positional prompt arguments")
+	}
+	if promptFlag != "" && len(args) > 0 {
+		return fmt.Errorf("cannot combine --prompt with positional prompt arguments")
 	}
 
-	if prompt == "" {
-		return fmt.Errorf("no prompt provided – pass as argument, pipe via stdin, or use --voice")
+	var initialPrompt string
+	switch {
+	case voice:
+		prompt, rerr := whisper.RecordAndTranscribe()
+		if rerr != nil {
+			return fmt.Errorf("voice input: %w", rerr)
+		}
+		initialPrompt = prompt
+	case promptFlag != "":
+		initialPrompt = promptFlag
+	case len(args) > 0:
+		initialPrompt = strings.Join(args, " ")
+	case !interactive:
+		data, rerr := io.ReadAll(cmd.InOrStdin())
+		if rerr != nil {
+			return fmt.Errorf("reading stdin: %w", rerr)
+		}
+		initialPrompt = strings.TrimRight(string(data), "\n")
+	}
+
+	if !interactive && initialPrompt == "" {
+		return fmt.Errorf("no prompt provided – pass -p, arguments, pipe via stdin, or use --voice")
 	}
 
 	// Build messages
 	var messages []provider.Message
 
-	// System prompt: flag > agent config > nothing
+	// System prompt: flag > agent config > model config
 	systemOverride, _ := cmd.Flags().GetString("system")
 	switch {
 	case systemOverride != "":
 		messages = append(messages, provider.Message{Role: "system", Content: systemOverride})
 	case agent.SystemPrompt != "":
 		messages = append(messages, provider.Message{Role: "system", Content: agent.SystemPrompt})
+	case modelCfg.SystemPrompt != "":
+		messages = append(messages, provider.Message{Role: "system", Content: modelCfg.SystemPrompt})
 	}
 
 	// Chat session
@@ -162,48 +186,76 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		messages = append(messages, history...)
 	}
 
-	messages = append(messages, provider.Message{Role: "user", Content: prompt})
-
 	// Streaming
 	streamFlag, _ := cmd.Flags().GetBool("stream")
 
 	var streamFn func(string)
 	if streamFlag {
 		streamFn = func(chunk string) {
-			fmt.Print(chunk)
+			fmt.Fprint(out, chunk)
 		}
 	}
 
 	// Warn (but don't hard-fail) when a provider expects an API key and none is set.
 	// Providers like Ollama legitimately have no key requirement.
 	if provCfg.APIKeyEnv != "" && provCfg.APIKey() == "" {
-		fmt.Fprintf(os.Stderr, "[zop] warning: environment variable %s is not set\n", provCfg.APIKeyEnv)
+		fmt.Fprintf(errOut, "[zop] warning: environment variable %s is not set\n", provCfg.APIKeyEnv)
 	}
 
-	req := provider.CompletionRequest{
-		Messages:   messages,
-		Model:      modelCfg,
-		Stream:     streamFlag,
-		StreamFunc: streamFn,
-	}
-
-	resp, err := prov.Complete(context.Background(), req)
-	if err != nil {
-		return err
-	}
-
-	// Print response (streaming already printed above)
-	if !streamFlag {
-		fmt.Println(resp.Content)
-	} else {
-		fmt.Println() // newline after streamed output
-	}
-
-	// Persist chat session
-	if chatName != "" && sessionMgr != nil {
+	sendPrompt := func(prompt string) error {
+		if prompt == "" {
+			return nil
+		}
+		messages = append(messages, provider.Message{Role: "user", Content: prompt})
+		req := provider.CompletionRequest{
+			Messages:   messages,
+			Model:      modelCfg,
+			Stream:     streamFlag,
+			StreamFunc: streamFn,
+		}
+		resp, rerr := prov.Complete(context.Background(), req)
+		if rerr != nil {
+			return rerr
+		}
+		if !streamFlag {
+			fmt.Fprintln(out, resp.Content)
+		} else {
+			fmt.Fprintln(out)
+		}
 		messages = append(messages, provider.Message{Role: "assistant", Content: resp.Content})
-		if err := sessionMgr.Save(chatName, messages); err != nil {
-			fmt.Fprintf(os.Stderr, "[zop] warning: could not save session: %v\n", err)
+		if chatName != "" && sessionMgr != nil {
+			if err := sessionMgr.Save(chatName, messages); err != nil {
+				fmt.Fprintf(errOut, "[zop] warning: could not save session: %v\n", err)
+			}
+		}
+		return nil
+	}
+
+	if initialPrompt != "" {
+		if err := sendPrompt(initialPrompt); err != nil {
+			return err
+		}
+	}
+
+	if !interactive {
+		return nil
+	}
+
+	reader := bufio.NewReader(cmd.InOrStdin())
+	for {
+		fmt.Fprint(errOut, "> ")
+		line, rerr := reader.ReadString('\n')
+		if rerr != nil && !errors.Is(rerr, io.EOF) {
+			return fmt.Errorf("reading prompt: %w", rerr)
+		}
+		line = strings.TrimSpace(line)
+		if line != "" {
+			if err := sendPrompt(line); err != nil {
+				return err
+			}
+		}
+		if errors.Is(rerr, io.EOF) {
+			break
 		}
 	}
 

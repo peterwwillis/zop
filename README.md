@@ -27,6 +27,9 @@ Or download a pre-built binary from the [Releases](https://github.com/peterwwill
 
 ```sh
 # Simple query (uses "default" agent from config)
+zop -p "What is the capital of France?"
+
+# Positional prompt still works
 zop "What is the capital of France?"
 
 # Pipe from stdin
@@ -39,6 +42,9 @@ zop --agent claude "Summarise this text"
 zop --chat my-chat "Start a conversation"
 zop --chat my-chat "Follow up question"
 
+# Interactive chat session
+zop --interactive --chat my-chat
+
 # Stream the response
 zop --stream "Write a haiku about Go"
 
@@ -48,7 +54,8 @@ zop --voice
 
 ## Configuration
 
-Copy the built-in default config as a starting point:
+On first run, zop writes the default config to `~/.config/zop/config.toml`.
+You can also copy the built-in default config as a starting point:
 
 ```sh
 mkdir -p ~/.config/zop
@@ -71,6 +78,7 @@ export OPENROUTER_API_KEY="..."
 [agents.default]
 provider = "openai"
 model    = "gpt4o"
+system_prompt = "You are a helpful assistant."
 
 [agents.claude]
 provider = "anthropic"
@@ -89,10 +97,23 @@ model_id    = "gpt-4o"
 max_tokens  = 4096
 temperature = 1.0
 top_p       = 1.0
+system_prompt = "You are a helpful assistant."
 ```
 
 See [`configs/default.toml`](configs/default.toml) for the full set of built-in agents,
 providers, and models.
+
+### Config Commands
+
+```sh
+zop config list
+zop config get agents.default
+zop config get models.gpt4o.max_tokens
+zop config set models.gpt4o.max_tokens 2048
+zop config unset models.gpt4o.system_prompt
+zop config remove agents.temp
+zop config edit
+```
 
 ## Chat Sessions
 
