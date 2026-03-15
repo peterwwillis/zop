@@ -139,6 +139,12 @@ and a Whisper model file. Set `ZOP_WHISPER_MODEL` to point to the model path
 To build a smaller binary without Whisper support, omit the build tag (or grab
 release artifacts suffixed with `-nowhisper`).
 
+## Mobile Roadmap
+
+See [ANDROID_FYNE_PLAN.md](ANDROID_FYNE_PLAN.md) for the design and implementation
+plan for the Android (Fyne) port, including the development checklist and build
+workflow.
+
 ## Development
 
 ```sh
