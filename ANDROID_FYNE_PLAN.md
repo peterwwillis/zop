@@ -11,8 +11,9 @@ The Android app will use an all-Go stack to reduce context switching between
 languages and simplify maintenance.
 
 - **GUI Framework**: Fyne (v2.x)
-- **Audio Capture**: `malgo` (recommended for microphone input); reserve `oto`
-  for playback if needed, since it is primarily output-focused.
+- **Audio Capture**: `malgo` (recommended for microphone input because it
+  provides cross-platform capture callbacks); reserve `oto` for playback if
+  needed, since it is primarily output-focused.
 - **Inference Engine**: whisper.cpp via CGO bindings (existing `internal/whisper`)
 - **Cross-Compilation Tool**: `fyne-cross` (Docker-based)
 
@@ -25,8 +26,9 @@ The interface is a single-page reactive layout.
   - Configuration button (opens a dedicated settings window)
 - **Center**
   - Scrollable read-only `widget.Entry` (disabled) for transcriptions/chat to
-    enable selection/copy; fall back to a wrapped `widget.Label` if performance
-    or memory usage becomes an issue.
+    enable selection/copy; fall back to a wrapped `widget.Label` if scrolling
+    slows with very long transcripts (e.g., 1k+ lines) or Android memory
+    pressure is observed.
 - **Center-bottom**
   - Text entry box for user prompts
 - **Bottom Bar**
