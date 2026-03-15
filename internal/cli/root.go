@@ -136,11 +136,11 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	var initialPrompt string
 	switch {
 	case voice:
-		prompt, rerr := whisper.RecordAndTranscribe()
+		voicePrompt, rerr := whisper.RecordAndTranscribe()
 		if rerr != nil {
 			return fmt.Errorf("voice input: %w", rerr)
 		}
-		initialPrompt = prompt
+		initialPrompt = voicePrompt
 	case promptFlag != "":
 		initialPrompt = promptFlag
 	case len(args) > 0:

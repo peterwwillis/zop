@@ -264,9 +264,6 @@ func newConfigEditCmd(gf *globalFlags) *cobra.Command {
 			if editor == "" {
 				editor = os.Getenv("EDITOR")
 			}
-			if editor == "" {
-				return fmt.Errorf("EDITOR is not set")
-			}
 			parts := strings.Fields(editor)
 			if len(parts) == 0 {
 				return fmt.Errorf("EDITOR is not set")

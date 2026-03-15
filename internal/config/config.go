@@ -245,7 +245,7 @@ func (p ProviderConfig) APIKey() string {
 func defaultConfig() (*Config, error) {
 	cfg := &Config{}
 	if _, err := toml.Decode(defaultConfigTOML, cfg); err != nil {
-		return nil, fmt.Errorf("parsing built-in config: %w", err)
+		return nil, fmt.Errorf("parsing default config: %w", err)
 	}
 	return cfg, nil
 }
