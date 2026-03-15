@@ -14,7 +14,10 @@ import (
 	"github.com/peterwwillis/zop/internal/provider"
 )
 
-const defaultSessionName = "mobile"
+const (
+	defaultSessionName          = "mobile"
+	defaultWhisperModelFilename = "ggml-base.en.bin"
+)
 
 // Controller coordinates config, providers, and chat history for the mobile UI.
 type Controller struct {
@@ -96,7 +99,7 @@ func (c *Controller) MissingAPIKeyWarning() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.providerConfig.APIKeyEnv != "" && c.providerConfig.APIKey() == "" {
-		return fmt.Sprintf("warning: environment variable %s is not set", c.providerConfig.APIKeyEnv)
+		return fmt.Sprintf("warning: environment variable %s is not set; API requests will fail", c.providerConfig.APIKeyEnv)
 	}
 	return ""
 }
@@ -294,8 +297,8 @@ func ensureWhisperModelPath() error {
 	}
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return nil
+		return fmt.Errorf("resolving config dir: %w", err)
 	}
-	modelPath := filepath.Join(configDir, "zop", "whisper", "ggml-base.en.bin")
+	modelPath := filepath.Join(configDir, "zop", "whisper", defaultWhisperModelFilename)
 	return os.Setenv("ZOP_WHISPER_MODEL", modelPath)
 }

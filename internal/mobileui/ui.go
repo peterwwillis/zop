@@ -16,8 +16,10 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"github.com/BurntSushi/toml"
 
 	zopapp "github.com/peterwwillis/zop/internal/app"
+	"github.com/peterwwillis/zop/internal/config"
 	"github.com/peterwwillis/zop/internal/provider"
 	"github.com/peterwwillis/zop/internal/whisper"
 )
@@ -125,10 +127,10 @@ func NewWindow(app fyne.App, controller *zopapp.Controller) fyne.Window {
 	recording := false
 	recordButton.OnTapped = func() {
 		if recording {
-			dialog.NewInformation("Recording", "Stopping is not yet supported. Recording will finish automatically.", window).Show()
+			dialog.NewInformation("Recording", "Recording cannot be stopped while transcription is in progress. It will complete automatically once transcription finishes.", window).Show()
 			return
 		}
-		dialog.NewConfirm("Microphone Access", "Zop needs access to your microphone to transcribe audio.", func(ok bool) {
+		dialog.NewConfirm("Microphone Access", "zop needs access to your microphone to transcribe audio.", func(ok bool) {
 			if !ok {
 				return
 			}
@@ -266,6 +268,10 @@ func showConfigWindow(app fyne.App, parent fyne.Window, controller *zopapp.Contr
 	loadConfig()
 
 	saveButton := widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), func() {
+		if err := validateConfigText(configEntry.Text); err != nil {
+			dialog.NewError(fmt.Errorf("invalid config: %w", err), parent).Show()
+			return
+		}
 		if err := os.WriteFile(path, []byte(configEntry.Text), 0600); err != nil {
 			dialog.NewError(err, parent).Show()
 			return
@@ -276,7 +282,7 @@ func showConfigWindow(app fyne.App, parent fyne.Window, controller *zopapp.Contr
 		}
 		updateTitle()
 		buffer.SetText(formatMessages(controller.Messages()))
-		dialog.NewInformation("Saved", "Configuration updated.", cfgWindow).Show()
+		dialog.NewInformation("Saved", "Configuration saved and reloaded successfully.", cfgWindow).Show()
 	})
 	reloadButton := widget.NewButtonWithIcon("Reload", theme.ViewRefreshIcon(), loadConfig)
 
@@ -311,4 +317,10 @@ func showAgentDialog(parent fyne.Window, controller *zopapp.Controller, updateTi
 		updateTitle()
 		refreshTranscript()
 	}, parent).Show()
+}
+
+func validateConfigText(text string) error {
+	var raw config.RawConfig
+	_, err := toml.Decode(text, &raw)
+	return err
 }
