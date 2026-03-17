@@ -13,7 +13,7 @@ on:
 
 # Only allow one release workflow per tag to run at a time.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -32,18 +32,28 @@ jobs:
 
       - name: Determine tag
         id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Validate: must be non-empty and contain only safe tag characters
+            if [ -z "$INPUT_TAG" ] || printf '%s' "$INPUT_TAG" | grep -qE '[^a-zA-Z0-9._/\-]'; then
+              echo "Error: tag input contains invalid characters." >&2
+              exit 1
+            fi
+            printf 'tag=%s\n' "$INPUT_TAG" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            printf 'tag=%s\n' "$REF_NAME" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Validate tag exists
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          if ! git rev-parse --verify "refs/tags/${TAG}" > /dev/null 2>&1; then
-            echo "Error: tag '${TAG}' does not exist in the repository." >&2
+          if ! git rev-parse --verify "refs/tags/${RELEASE_TAG}" > /dev/null 2>&1; then
+            echo "Error: tag '${RELEASE_TAG}' does not exist in the repository." >&2
             exit 1
           fi
 
