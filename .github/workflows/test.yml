@@ -17,6 +17,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  WHISPER_CPP_VERSION: v1.8.3
+  RELEASE_ANDROID_APP_ID: com.zop.app
+  RELEASE_ANDROID_ARCH: arm64
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -79,7 +84,7 @@ jobs:
 
       - name: Fetch and build whisper.cpp
         run: |
-          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
+          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
           cmake -S internal/whisper/whisper.cpp \
             -B internal/whisper/whisper.cpp/build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -171,7 +176,7 @@ jobs:
       - name: Fetch whisper.cpp
         if: ${{ matrix.whisper }}
         run: |
-          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
+          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
           cmake -S internal/whisper/whisper.cpp \
             -B internal/whisper/whisper.cpp/build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -229,7 +234,7 @@ jobs:
 
       - name: Build APK
         run: |
-          fyne-cross android -app-id com.zop.app -arch arm64 ./cmd/zop-mobile
+          fyne-cross android -app-id "$RELEASE_ANDROID_APP_ID" -arch "$RELEASE_ANDROID_ARCH" ./cmd/zop-mobile
           APK_PATH=$(find fyne-cross/dist -type f -name "*.apk" -print -quit)
           if [ -z "$APK_PATH" ]; then
             echo "APK not found under fyne-cross/dist" >&2
