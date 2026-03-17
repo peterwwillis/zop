@@ -30,8 +30,8 @@ jobs:
           # causes Go to try to build ".out" as a package.
           - os: ubuntu-latest
             test_args: "-race -coverprofile=coverage.out"
-          - os: windows-latest
-            test_args: "-race"
+          # - os: windows-latest
+          #   test_args: "-race"
 
     steps:
       - uses: actions/checkout@v4

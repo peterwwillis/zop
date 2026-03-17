@@ -75,11 +75,25 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
+      - name: Fetch whisper.cpp
+        run: |
+          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
+          cmake -S internal/whisper/whisper.cpp \
+            -B internal/whisper/whisper.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=OFF \
+            -DWHISPER_BUILD_SERVER=OFF
+          cmake --build internal/whisper/whisper.cpp/build --target whisper
+
       - name: Vet
-        run: go vet ./...
+        run: go vet -tags whisper ./...
 
       - name: Test
-        run: go test -race ./...
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -tags whisper ./...
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -108,18 +122,18 @@ jobs:
             suffix: "-nowhisper"
             whisper: false
           # Windows (no-whisper only for now)
-          - goos: windows
-            goarch: amd64
-            cgo: "0"
-            tags: ""
-            suffix: "-nowhisper"
-            whisper: false
-          - goos: windows
-            goarch: arm64
-            cgo: "0"
-            tags: ""
-            suffix: "-nowhisper"
-            whisper: false
+          # - goos: windows
+          #   goarch: amd64
+          #   cgo: "0"
+          #   tags: ""
+          #   suffix: "-nowhisper"
+          #   whisper: false
+          # - goos: windows
+          #   goarch: arm64
+          #   cgo: "0"
+          #   tags: ""
+          #   suffix: "-nowhisper"
+          #   whisper: false
           # macOS builds are intentionally excluded until a self-hosted runner is provided.
 
     steps:
