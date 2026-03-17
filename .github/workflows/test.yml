@@ -19,8 +19,8 @@ permissions:
 
 env:
   WHISPER_CPP_VERSION: v1.8.3
-  RELEASE_ANDROID_APP_ID: com.zop.app
-  RELEASE_ANDROID_ARCH: arm64
+  ANDROID_APP_ID: com.zop.app
+  ANDROID_ARCH: arm64
 
 jobs:
   test:
@@ -234,13 +234,13 @@ jobs:
 
       - name: Build APK
         run: |
-          fyne-cross android -app-id "$RELEASE_ANDROID_APP_ID" -arch "$RELEASE_ANDROID_ARCH" ./cmd/zop-mobile
+          fyne-cross android -app-id "$ANDROID_APP_ID" -arch "$ANDROID_ARCH" ./cmd/zop-mobile
           APK_PATH=$(find fyne-cross/dist -type f -name "*.apk" -print -quit)
           if [ -z "$APK_PATH" ]; then
             echo "APK not found under fyne-cross/dist" >&2
             exit 1
           fi
-          cp "$APK_PATH" "zop-android-${RELEASE_ANDROID_ARCH}.apk"
+          cp "$APK_PATH" "zop-android-${ANDROID_ARCH}.apk"
 
   screenshot:
     name: Capture UI screenshot
