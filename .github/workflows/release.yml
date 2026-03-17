@@ -22,7 +22,7 @@ permissions:
 jobs:
   resolve-tag:
     name: Resolve release tag
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     steps:
@@ -60,7 +60,7 @@ jobs:
   test:
     name: Test before release
     needs: resolve-tag
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,7 +98,7 @@ jobs:
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: [resolve-tag, test]
-    runs-on: ubuntu-slim
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
@@ -109,24 +109,28 @@ jobs:
             tags: "whisper"
             suffix: ""
             whisper: true
+            runner: ubuntu-latest
           - goos: linux
             goarch: amd64
             cgo: "0"
             tags: ""
             suffix: "-nowhisper"
             whisper: false
+            runner: ubuntu-latest
           - goos: linux
             goarch: arm64
             cgo: "1"
             tags: "whisper"
             suffix: ""
             whisper: true
+            runner: ubuntu-24.04-arm
           - goos: linux
             goarch: arm64
             cgo: "0"
             tags: ""
             suffix: "-nowhisper"
             whisper: false
+            runner: ubuntu-24.04-arm
           # Windows (no-whisper only for now)
           #- goos: windows
           #  goarch: amd64
@@ -259,7 +263,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [resolve-tag, build, android]
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
