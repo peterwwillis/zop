@@ -1,0 +1,50 @@
+name: Create Release Tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create (e.g. v0.3.1)"
+        required: true
+        default: "v0.3.1"
+        type: string
+      sha:
+        description: "Commit SHA to tag (defaults to HEAD of main)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Resolve target SHA
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.sha }}" ]; then
+            echo "sha=${{ inputs.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          SHA="${{ steps.resolve.outputs.sha }}"
+          echo "Creating tag ${TAG} at ${SHA}"
+          gh api repos/${{ github.repository }}/git/refs \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            --field ref="refs/tags/${TAG}" \
+            --field sha="${SHA}"
+          echo "Tag ${TAG} created successfully at ${SHA}"
