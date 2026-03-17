@@ -17,6 +17,11 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  WHISPER_CPP_VERSION: v1.8.3
+  ANDROID_APP_ID: com.zop.app
+  ANDROID_ARCH: arm64
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -79,7 +84,7 @@ jobs:
 
       - name: Fetch and build whisper.cpp
         run: |
-          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
+          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
           cmake -S internal/whisper/whisper.cpp \
             -B internal/whisper/whisper.cpp/build \
             -DCMAKE_BUILD_TYPE=Release \
@@ -101,6 +106,131 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go test -race -tags whisper ./...
+
+  release-dry-run-build:
+    name: Release dry run build (${{ matrix.goos }}/${{ matrix.goarch }})
+    if: github.event_name == 'pull_request'
+    needs: [test, test-whisper]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            cgo: "1"
+            tags: "whisper"
+            suffix: ""
+            whisper: true
+            runner: ubuntu-latest
+          - goos: linux
+            goarch: amd64
+            cgo: "0"
+            tags: ""
+            suffix: "-nowhisper"
+            whisper: false
+            runner: ubuntu-latest
+          - goos: linux
+            goarch: arm64
+            cgo: "1"
+            tags: "whisper"
+            suffix: ""
+            whisper: true
+            runner: ubuntu-24.04-arm
+          - goos: linux
+            goarch: arm64
+            cgo: "0"
+            tags: ""
+            suffix: "-nowhisper"
+            whisper: false
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Set binary name
+        id: binary
+        shell: bash
+        run: |
+          NAME="zop-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }}"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch whisper.cpp
+        if: ${{ matrix.whisper }}
+        run: |
+          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
+          cmake -S internal/whisper/whisper.cpp \
+            -B internal/whisper/whisper.cpp/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DWHISPER_BUILD_TESTS=OFF \
+            -DWHISPER_BUILD_EXAMPLES=OFF \
+            -DWHISPER_BUILD_SERVER=OFF
+          cmake --build internal/whisper/whisper.cpp/build --target whisper
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          TAGS="${{ matrix.tags }}"
+          TAG_ARGS=()
+          if [ -n "$TAGS" ]; then
+            TAG_ARGS=(-tags "$TAGS")
+          fi
+          go build \
+            "${TAG_ARGS[@]}" \
+            -ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=pr-dry-run" \
+            -o "${{ steps.binary.outputs.name }}" \
+            ./cmd/zop
+
+  release-dry-run-android:
+    name: Release dry run Android APK
+    if: github.event_name == 'pull_request'
+    needs: [test, test-whisper]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM for Android hardware acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install fyne-cross
+        run: |
+          go install github.com/fyne-io/fyne-cross@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build APK
+        run: |
+          fyne-cross android -app-id "$ANDROID_APP_ID" -arch "$ANDROID_ARCH" ./cmd/zop-mobile
+          APK_PATH=$(find fyne-cross/dist -type f -name "*.apk" -print -quit)
+          if [ -z "$APK_PATH" ]; then
+            echo "APK not found under fyne-cross/dist" >&2
+            exit 1
+          fi
+          cp "$APK_PATH" "zop-android-${ANDROID_ARCH}.apk"
 
   screenshot:
     name: Capture UI screenshot
