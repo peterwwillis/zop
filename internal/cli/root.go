@@ -177,6 +177,7 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		voicePrompt = strings.TrimSpace(voicePrompt)
 		if gf.verbose {
 			fmt.Fprintf(errOut, "[zop] Whisper transcription complete (%d chars)\n", len(voicePrompt))
+			fmt.Fprintf(errOut, "[zop] transcription: %s\n", voicePrompt)
 		}
 		return voicePrompt, nil
 	}
