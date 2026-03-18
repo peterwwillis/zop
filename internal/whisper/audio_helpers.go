@@ -42,16 +42,23 @@ func rmsAmplitude(samples []int16) float64 {
 	return math.Sqrt(sumSq / float64(len(samples)))
 }
 
-// rmsAmplitudeFloat32 returns the root-mean-square amplitude for normalized
-// float32 audio frames.
+// rmsAmplitudeFloat32 returns RMS amplitude for normalized float32 audio after
+// removing the frame mean (DC offset). Some devices expose a strong DC bias;
+// subtracting the mean makes VAD robust across different microphones.
 func rmsAmplitudeFloat32(samples []float32) float64 {
 	if len(samples) == 0 {
 		return 0
 	}
 
+	var mean float64
+	for _, s := range samples {
+		mean += float64(s)
+	}
+	mean /= float64(len(samples))
+
 	var sumSq float64
 	for _, s := range samples {
-		v := float64(s)
+		v := float64(s) - mean
 		sumSq += v * v
 	}
 

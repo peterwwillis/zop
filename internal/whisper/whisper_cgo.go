@@ -111,30 +111,20 @@ const (
 
 	// Adaptive VAD constants.
 	//
-	// noiseRMS is tracked with an EWMA. We start speech when frame RMS rises above
-	// (noiseRMS * startMult + startOffset) for at least speechStartMin, and we
-	// consider speech ended when it stays below (noiseRMS * stopMult + stopOffset)
-	// for speechEndHangover. The start threshold is intentionally higher than the
-	// stop threshold to provide hysteresis and avoid chatter on noisy microphones.
+	// We compute frame RMS with DC-offset removed and compare it to a running
+	// ambient-noise RMS estimate using SNR (in dB). This makes detection portable
+	// across microphones with very different gain levels.
 	captureNoiseEWMAAlpha = 0.08
+	captureNoiseWarmup    = 400 * time.Millisecond
 
-	// On some mics, speech RMS is only slightly above baseline RMS, so keep
-	// thresholds close to the tracked noise floor.
-	captureSpeechStartMult   = 1.02
-	captureSpeechStartOffset = 60.0
-	captureSpeechStartMin    = 1 * time.Millisecond
-
-	captureSpeechStopMult    = 1.005
-	captureSpeechStopOffset  = 20.0
+	captureSpeechStartDB  = 5.0
+	captureSpeechStopDB   = 2.0
+	captureSpeechStartMin = 120 * time.Millisecond
 	captureSpeechEndHangover = 220 * time.Millisecond
-	// Keep the speech stop threshold close to the session peak so recordings can
-	// end even when the microphone baseline is unusually hot/noisy.
-	captureSpeechPeakStopRatio = 0.94
-	captureSpeechPeakDecay     = 0.99990
 
-	// Minimum RMS threshold guard so near-silent environments don't collapse
-	// thresholds to zero.
-	captureMinThreshold = 300.0
+	// Floors to avoid divide-by-zero/near-zero instability.
+	captureNoiseFloorRMS = 1.0
+	captureMinVoiceRMS   = 120.0
 )
 
 // RecordAndTranscribe records audio from the default microphone and transcribes
@@ -175,7 +165,7 @@ func RecordAndTranscribe() (string, error) {
 		}
 	}()
 
-	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-D to stop, or pause to auto-stop.")
+	fmt.Fprintln(os.Stderr, "Recording… calibrating noise floor briefly, then speak (Ctrl-D to stop).")
 	pcm, err := captureAudioPCM(sigCtx, captureMaxDuration, captureStopAfterSilence)
 	if err != nil {
 		return "", fmt.Errorf("capturing audio: %w", err)
@@ -255,7 +245,6 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 		samples          []float32
 		detectedSpeech   bool
 		speechActive     bool
-		speechPeakRMS    float64
 		totalSamples     int64
 		lastSpeechSample int64
 		speechAboveStart int64
@@ -269,6 +258,7 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 	)
 	speechStartSamples := durationToSamples(captureSpeechStartMin)
 	speechEndSamples := durationToSamples(captureSpeechEndHangover)
+	noiseWarmupSamples := durationToSamples(captureNoiseWarmup)
 	debugEverySamples := durationToSamples(250 * time.Millisecond)
 
 	stopCapture := func() {
@@ -294,57 +284,57 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 			}
 			totalSamples += frameCount
 
-			// Keep VAD thresholds in int16-equivalent units for easier tuning.
+			// Keep VAD RMS values in int16-equivalent units for readable logs.
+			// We remove DC offset first so microphones with constant bias don't look
+			// like continuous speech.
 			frameRMS := rmsAmplitudeFloat32(frameSamples) * 32768.0
 
 			if !noiseInitialized {
-				noiseRMS = frameRMS
+				noiseRMS = math.Max(frameRMS, captureNoiseFloorRMS)
 				noiseInitialized = true
 			}
-			// Some devices emit one or more all-zero warmup frames. If that happens,
-			// seed noiseRMS as soon as we observe a real signal so thresholds aren't
-			// stuck at the minimum.
-			if noiseRMS < 1 && frameRMS > captureMinThreshold {
-				noiseRMS = frameRMS
+			noiseRMS = math.Max(noiseRMS, captureNoiseFloorRMS)
+
+			inWarmup := totalSamples <= noiseWarmupSamples
+
+			if inWarmup {
+				// During warmup, only estimate ambient noise and suppress speech state.
+				noiseRMS += captureNoiseEWMAAlpha * (frameRMS - noiseRMS)
+				noiseRMS = math.Max(noiseRMS, captureNoiseFloorRMS)
+				speechAboveStart = 0
+				speechBelowStop = 0
+				speechActive = false
 			}
 
-			startThreshold := math.Max(captureMinThreshold, noiseRMS*captureSpeechStartMult+captureSpeechStartOffset)
-			stopThreshold := math.Max(captureMinThreshold, noiseRMS*captureSpeechStopMult+captureSpeechStopOffset)
+			snrDB := 20.0 * math.Log10((frameRMS+captureNoiseFloorRMS)/(noiseRMS+captureNoiseFloorRMS))
 
-			if !speechActive {
-				if frameRMS >= startThreshold {
-					speechAboveStart += frameCount
-					if speechAboveStart >= speechStartSamples {
-						speechActive = true
-						detectedSpeech = true
-						speechPeakRMS = frameRMS
-						lastSpeechSample = totalSamples
+			if !inWarmup {
+				if !speechActive {
+					if frameRMS >= captureMinVoiceRMS && snrDB >= captureSpeechStartDB {
+						speechAboveStart += frameCount
+						if speechAboveStart >= speechStartSamples {
+							speechActive = true
+							detectedSpeech = true
+							lastSpeechSample = totalSamples
+							speechAboveStart = 0
+							speechBelowStop = 0
+						}
+					} else {
 						speechAboveStart = 0
-						speechBelowStop = 0
+						// Update ambient noise estimate only while not in speech.
+						noiseRMS += captureNoiseEWMAAlpha * (frameRMS - noiseRMS)
+						noiseRMS = math.Max(noiseRMS, captureNoiseFloorRMS)
 					}
 				} else {
-					speechAboveStart = 0
-					// Only update ambient noise estimate while not in speech.
-					noiseRMS += captureNoiseEWMAAlpha * (frameRMS - noiseRMS)
-				}
-			} else {
-				if frameRMS > speechPeakRMS {
-					speechPeakRMS = frameRMS
-				} else {
-					// Decay very slowly so peak-relative stop threshold stays useful
-					// during short pauses even with noisy microphones.
-					speechPeakRMS *= captureSpeechPeakDecay
-				}
-
-				effectiveStopThreshold := math.Max(stopThreshold, speechPeakRMS*captureSpeechPeakStopRatio)
-				if frameRMS >= effectiveStopThreshold {
-					speechBelowStop = 0
-					lastSpeechSample = totalSamples
-				} else {
-					speechBelowStop += frameCount
-					if speechBelowStop >= speechEndSamples {
-						speechActive = false
+					if frameRMS >= captureMinVoiceRMS && snrDB >= captureSpeechStopDB {
 						speechBelowStop = 0
+						lastSpeechSample = totalSamples
+					} else {
+						speechBelowStop += frameCount
+						if speechBelowStop >= speechEndSamples {
+							speechActive = false
+							speechBelowStop = 0
+						}
 					}
 				}
 			}
@@ -364,12 +354,13 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 			if vadDebug && totalSamples-lastDebugSample >= debugEverySamples {
 				fmt.Fprintf(
 					os.Stderr,
-					"[zop] vad rms=%.1f noise=%.1f start=%.1f stop=%.1f peak=%.1f active=%t detected=%t silence_ms=%d\n",
+					"[zop] vad rms=%.1f noise=%.1f snr_db=%.2f start_db=%.2f stop_db=%.2f warmup=%t active=%t detected=%t silence_ms=%d\n",
 					frameRMS,
 					noiseRMS,
-					startThreshold,
-					math.Max(stopThreshold, speechPeakRMS*captureSpeechPeakStopRatio),
-					speechPeakRMS,
+					snrDB,
+					captureSpeechStartDB,
+					captureSpeechStopDB,
+					inWarmup,
 					speechActive,
 					detectedSpeech,
 					elapsedSinceLastSpeech/time.Millisecond,

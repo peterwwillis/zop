@@ -36,7 +36,9 @@ func TestRMSAmplitudeFloat32(t *testing.T) {
 
 	require.Equal(t, 0.0, rmsAmplitudeFloat32(nil))
 	require.Equal(t, 0.0, rmsAmplitudeFloat32([]float32{0, 0, 0}))
-	require.InDelta(t, 0.5, rmsAmplitudeFloat32([]float32{0.5, -0.5, 0.5, -0.5}), 1e-9)
+	require.InDelta(t, 0.5, rmsAmplitudeFloat32([]float32{0.5, -0.5, 0.5, -0.5}), 1e-7)
+	require.InDelta(t, 0.0, rmsAmplitudeFloat32([]float32{0.5, 0.5, 0.5, 0.5}), 1e-9)
+	require.InDelta(t, 0.5, rmsAmplitudeFloat32([]float32{0.6, -0.4, 0.6, -0.4}), 1e-7)
 }
 
 func TestInt16ToPCMFloat(t *testing.T) {
