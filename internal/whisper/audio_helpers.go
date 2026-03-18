@@ -10,18 +10,24 @@ func bytesToInt16(raw []byte) []int16 {
 	return out
 }
 
+// hasSpeech reports whether the RMS amplitude of samples meets or exceeds
+// threshold. Using RMS rather than peak amplitude prevents isolated noise
+// spikes from resetting the silence timer on every frame.
+//
+// The comparison is done in squared units to avoid a sqrt:
+//
+//	rms >= threshold  ⟺  sum(s²)/len >= threshold²
 func hasSpeech(samples []int16, threshold int16) bool {
-	for _, sample := range samples {
-		// Convert to int32 before taking abs so -32768 is handled correctly.
-		v := int32(sample)
-		if v < 0 {
-			v = -v
-		}
-		if v >= int32(threshold) {
-			return true
-		}
+	if len(samples) == 0 {
+		return false
 	}
-	return false
+	var sum int64
+	for _, s := range samples {
+		v := int64(s)
+		sum += v * v
+	}
+	t := int64(threshold)
+	return sum >= t*t*int64(len(samples))
 }
 
 func int16ToPCMFloat(samples []int16) []float32 {

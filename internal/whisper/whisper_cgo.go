@@ -107,10 +107,11 @@ const (
 	captureChannels         = 1
 	captureMaxDuration      = 30 * time.Second
 	captureStopAfterSilence = 1200 * time.Millisecond
-	// captureSpeechThreshold is an absolute int16 amplitude threshold. Values
-	// below this are treated as background noise; values at/above it count as
-	// speech activity for silence-stop detection.
-	captureSpeechThreshold = 700
+	// captureSpeechThreshold is an RMS amplitude threshold (int16 units).
+	// Background noise in a quiet room is typically 100–300 RMS; conversational
+	// speech is 1 000–5 000+. 800 sits comfortably between the two, so ambient
+	// hiss or HVAC hum won't prevent the silence timer from advancing.
+	captureSpeechThreshold = 800
 )
 
 // RecordAndTranscribe records audio from the default microphone and transcribes
@@ -133,11 +134,26 @@ func RecordAndTranscribe() (string, error) {
 	}
 	defer C.whisper_free(ctx)
 
-	recordCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	recordCtx, stopRecording := context.WithCancel(context.Background())
+	defer stopRecording()
 
-	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-C or wait for silence.")
-	pcm, err := captureAudioPCM(recordCtx, captureMaxDuration, captureStopAfterSilence)
+	// Handle SIGTERM so the OS can cleanly stop a recording in progress.
+	sigCtx, sigStop := signal.NotifyContext(recordCtx, syscall.SIGTERM)
+	defer sigStop()
+
+	// Watch for Ctrl+D (EOF on stdin) to stop recording without exiting.
+	go func() {
+		b := make([]byte, 1)
+		for {
+			if _, err := os.Stdin.Read(b); err != nil {
+				stopRecording()
+				return
+			}
+		}
+	}()
+
+	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-D to stop, or wait for silence to stop automatically.")
+	pcm, err := captureAudioPCM(sigCtx, captureMaxDuration, captureStopAfterSilence)
 	if err != nil {
 		return "", fmt.Errorf("capturing audio: %w", err)
 	}
@@ -295,11 +311,9 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 		_ = device.Stop()
 	}
 
-	// If we exited due to context cancellation or timeout, surface that error
-	// to the caller instead of returning (possibly empty) audio with a nil error.
-	if err := waitCtx.Err(); err != nil {
-		return nil, err
-	}
+	// Return whatever was recorded regardless of why we stopped (silence
+	// detection, max-duration timeout, or Ctrl-C / SIGTERM). The caller
+	// checks for empty audio and surfaces a clear error in that case.
 
 	mu.Lock()
 	recorded := append([]int16(nil), samples...)
