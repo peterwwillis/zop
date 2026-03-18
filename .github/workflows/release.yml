@@ -73,27 +73,16 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Fetch whisper.cpp
-        run: |
-          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
-          cmake -S internal/whisper/whisper.cpp \
-            -B internal/whisper/whisper.cpp/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=OFF \
-            -DWHISPER_BUILD_SERVER=OFF
-          cmake --build internal/whisper/whisper.cpp/build --target whisper
+        run: make whisper-fetch
 
       - name: Vet
-        run: go vet -tags whisper ./...
+        run: make vet-whisper
 
       - name: Test
-        env:
-          CGO_ENABLED: "1"
-        run: go test -race -tags whisper ./...
+        run: make test-whisper
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -158,7 +147,7 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Set binary name
         id: binary
@@ -178,16 +167,7 @@ jobs:
 
       - name: Fetch whisper.cpp
         if: ${{ matrix.whisper }}
-        run: |
-          git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
-          cmake -S internal/whisper/whisper.cpp \
-            -B internal/whisper/whisper.cpp/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=OFF \
-            -DWHISPER_BUILD_SERVER=OFF
-          cmake --build internal/whisper/whisper.cpp/build --target whisper
+        run: make whisper-fetch
 
       - name: Build
         env:
@@ -196,16 +176,14 @@ jobs:
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
-          TAGS="${{ matrix.tags }}"
-          TAG_ARGS=()
-          if [ -n "$TAGS" ]; then
-            TAG_ARGS=(-tags "$TAGS")
-          fi
-          go build \
-            "${TAG_ARGS[@]}" \
-            -ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=${{ needs.resolve-tag.outputs.tag }}" \
-            -o "${{ steps.binary.outputs.name }}" \
-            ./cmd/zop
+          make build-bin \
+            GOOS="${{ matrix.goos }}" \
+            GOARCH="${{ matrix.goarch }}" \
+            GOARM="${{ matrix.goarm }}" \
+            CGO_ENABLED="${{ matrix.cgo }}" \
+            BUILD_TAGS="${{ matrix.tags }}" \
+            VERSION="${{ needs.resolve-tag.outputs.tag }}" \
+            BINARY="${{ steps.binary.outputs.name }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -236,7 +214,7 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Install fyne-cross
         run: |
@@ -244,14 +222,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build APK
-        run: |
-          fyne-cross android -app-id com.zop.app -arch arm64 ./cmd/zop-mobile
-          APK_PATH=$(find fyne-cross/dist -type f -name "*.apk" -print -quit)
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found under fyne-cross/dist" >&2
-            exit 1
-          fi
-          cp "$APK_PATH" "zop-android-arm64.apk"
+        run: make android-apk ANDROID_APP_ID="com.zop.app" ANDROID_ARCH="arm64"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

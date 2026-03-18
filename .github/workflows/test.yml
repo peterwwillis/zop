@@ -48,16 +48,16 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Vet
-        run: go vet ./...
+        run: make vet
 
       - name: Build
-        run: go build ./...
+        run: make build
 
       - name: Test
-        run: go test ${{ matrix.test_args }} ./...
+        run: make test TEST_ARGS="${{ matrix.test_args }}"
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
@@ -80,32 +80,19 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Fetch and build whisper.cpp
-        run: |
-          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
-          cmake -S internal/whisper/whisper.cpp \
-            -B internal/whisper/whisper.cpp/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=OFF \
-            -DWHISPER_BUILD_SERVER=OFF
-          cmake --build internal/whisper/whisper.cpp/build --target whisper
+        run: make whisper-fetch
 
       - name: Vet (whisper)
-        run: go vet -tags whisper ./...
+        run: make vet-whisper
 
       - name: Build (whisper)
-        env:
-          CGO_ENABLED: "1"
-        run: go build -tags whisper ./...
+        run: make build-whisper
 
       - name: Test (whisper)
-        env:
-          CGO_ENABLED: "1"
-        run: go test -race -tags whisper ./...
+        run: make test-whisper
 
   release-dry-run-build:
     name: Release dry run build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -155,7 +142,7 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Set binary name
         id: binary
@@ -166,16 +153,7 @@ jobs:
 
       - name: Fetch whisper.cpp
         if: ${{ matrix.whisper }}
-        run: |
-          git clone --depth 1 --branch "$WHISPER_CPP_VERSION" https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
-          cmake -S internal/whisper/whisper.cpp \
-            -B internal/whisper/whisper.cpp/build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DWHISPER_BUILD_TESTS=OFF \
-            -DWHISPER_BUILD_EXAMPLES=OFF \
-            -DWHISPER_BUILD_SERVER=OFF
-          cmake --build internal/whisper/whisper.cpp/build --target whisper
+        run: make whisper-fetch
 
       - name: Build
         env:
@@ -183,16 +161,13 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
-          TAGS="${{ matrix.tags }}"
-          TAG_ARGS=()
-          if [ -n "$TAGS" ]; then
-            TAG_ARGS=(-tags "$TAGS")
-          fi
-          go build \
-            "${TAG_ARGS[@]}" \
-            -ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=pr-dry-run" \
-            -o "${{ steps.binary.outputs.name }}" \
-            ./cmd/zop
+          make build-bin \
+            GOOS="${{ matrix.goos }}" \
+            GOARCH="${{ matrix.goarch }}" \
+            CGO_ENABLED="${{ matrix.cgo }}" \
+            BUILD_TAGS="${{ matrix.tags }}" \
+            VERSION="pr-dry-run" \
+            BINARY="${{ steps.binary.outputs.name }}"
 
   release-dry-run-android:
     name: Release dry run Android APK
@@ -215,7 +190,7 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Install fyne-cross
         run: |
@@ -223,14 +198,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build APK
-        run: |
-          fyne-cross android -app-id "$ANDROID_APP_ID" -arch "$ANDROID_ARCH" ./cmd/zop-mobile
-          APK_PATH=$(find fyne-cross/dist -type f -name "*.apk" -print -quit)
-          if [ -z "$APK_PATH" ]; then
-            echo "APK not found under fyne-cross/dist" >&2
-            exit 1
-          fi
-          cp "$APK_PATH" "zop-android-${ANDROID_ARCH}.apk"
+        run: make android-apk ANDROID_APP_ID="$ANDROID_APP_ID" ANDROID_ARCH="$ANDROID_ARCH"
 
   screenshot:
     name: Capture UI screenshot
@@ -252,14 +220,14 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        run: go mod download
+        run: make deps
 
       - name: Capture screenshot
         env:
           ZOP_SCREENSHOT_PATH: ${{ github.workspace }}/artifacts/zop-mobile-ui.png
         run: |
           mkdir -p artifacts
-          go test -tags fyne ./internal/mobileui -run TestScreenshot -count=1
+          make screenshot
 
       - name: Upload screenshot artifact
         uses: actions/upload-artifact@v4
