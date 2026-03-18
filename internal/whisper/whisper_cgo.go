@@ -21,13 +21,20 @@ package whisper
 import "C"
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/gen2brain/malgo"
 )
 
 // defaultModelURL is where the base English Whisper model is fetched when the
@@ -95,12 +102,20 @@ func ensureModel(path string) error {
 	return nil
 }
 
-// RecordAndTranscribe records audio from the default microphone for up to 30
-// seconds (stopped when the user presses Enter) and transcribes it using the
-// local Whisper model.  If the model file does not exist it is downloaded first.
-//
-// NOTE: Audio capture is platform-specific and must be adapted for each OS.
-// This stub shows the Whisper integration; callers must supply PCM audio data.
+const (
+	captureSampleRate       = 16000
+	captureChannels         = 1
+	captureMaxDuration      = 30 * time.Second
+	captureStopAfterSilence = 1200 * time.Millisecond
+	// captureSpeechThreshold is an absolute int16 amplitude threshold. Values
+	// below this are treated as background noise; values at/above it count as
+	// speech activity for silence-stop detection.
+	captureSpeechThreshold = 700
+)
+
+// RecordAndTranscribe records audio from the default microphone and transcribes
+// it using the local Whisper model. If the model file does not exist it is
+// downloaded first.
 func RecordAndTranscribe() (string, error) {
 	modelPath := defaultModelPath()
 
@@ -118,10 +133,177 @@ func RecordAndTranscribe() (string, error) {
 	}
 	defer C.whisper_free(ctx)
 
-	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-C or wait for silence.")
-	// In a real implementation, capture PCM audio here.
-	// For now we sleep briefly to demonstrate compilation works.
-	time.Sleep(100 * time.Millisecond)
+	recordCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	return "", fmt.Errorf("whisper audio capture not yet implemented on this platform")
+	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-C or wait for silence.")
+	pcm, err := captureAudioPCM(recordCtx, captureMaxDuration, captureStopAfterSilence)
+	if err != nil {
+		return "", fmt.Errorf("capturing audio: %w", err)
+	}
+	if len(pcm) == 0 {
+		return "", fmt.Errorf("no audio captured")
+	}
+
+	wparams := C.whisper_full_default_params(C.WHISPER_SAMPLING_GREEDY)
+	wparams.print_progress = false
+	wparams.print_realtime = false
+	wparams.print_timestamps = false
+	wparams.translate = false
+	wparams.no_context = true
+	wparams.single_segment = false
+
+	if rc := C.whisper_full(ctx, wparams, (*C.float)(unsafe.Pointer(&pcm[0])), C.int(len(pcm))); rc != 0 {
+		return "", fmt.Errorf("whisper inference failed (code %d)", int(rc))
+	}
+
+	var out strings.Builder
+	segments := int(C.whisper_full_n_segments(ctx))
+	for i := 0; i < segments; i++ {
+		seg := strings.TrimSpace(C.GoString(C.whisper_full_get_segment_text(ctx, C.int(i))))
+		if seg == "" {
+			continue
+		}
+		if out.Len() > 0 {
+			out.WriteByte(' ')
+		}
+		out.WriteString(seg)
+	}
+
+	text := strings.TrimSpace(out.String())
+	if text == "" {
+		return "", fmt.Errorf("no speech recognized")
+	}
+	return text, nil
+}
+
+// bytesToInt16View creates a zero-allocation int16 view over a byte slice.
+// The returned slice is only valid as long as the underlying byte slice is valid.
+// It is safe to use within the callback as we copy the data out before returning.
+func bytesToInt16View(b []byte) []int16 {
+	if len(b) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*int16)(unsafe.Pointer(&b[0])), len(b)/2)
+}
+
+func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Duration) ([]float32, error) {
+	mctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = mctx.Uninit()
+		mctx.Free()
+	}()
+
+	cfg := malgo.DefaultDeviceConfig(malgo.Capture)
+	cfg.Capture.Format = malgo.FormatS16
+	cfg.Capture.Channels = captureChannels
+	cfg.SampleRate = captureSampleRate
+
+	var (
+		mu              sync.Mutex
+		samples         []int16
+		detectedSpeech  bool
+		totalSamples    int64 // total samples captured across all channels
+		lastSpeechSample int64
+		stopOnce        sync.Once
+		done            = make(chan struct{})
+	)
+
+	stopCapture := func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+
+	deviceCallbacks := malgo.DeviceCallbacks{
+		Data: func(_, input []byte, _ uint32) {
+			frameSamples := bytesToInt16View(input)
+			if len(frameSamples) == 0 {
+				return
+			}
+
+			mu.Lock()
+			samples = append(samples, frameSamples...)
+
+			// Number of frames in this callback (per channel).
+			frameCount := int64(len(frameSamples)) / int64(captureChannels)
+			if frameCount <= 0 {
+				mu.Unlock()
+				return
+			}
+
+			// Update sample counters.
+			totalSamplesBefore := totalSamples
+			totalSamples += frameCount
+
+			if hasSpeech(frameSamples, captureSpeechThreshold) {
+				detectedSpeech = true
+				lastSpeechSample = totalSamples
+			}
+
+			// Convert sample counts to durations using the known sample rate.
+			sampleRate := int64(captureSampleRate)
+			elapsedSinceStart := time.Duration(totalSamples) * time.Second / time.Duration(sampleRate)
+
+			var elapsedSinceLastSpeech time.Duration
+			if detectedSpeech {
+				silenceSamples := totalSamples - lastSpeechSample
+				if silenceSamples < 0 {
+					// Should not happen, but guard against negative durations.
+					silenceSamples = 0
+				}
+				elapsedSinceLastSpeech = time.Duration(silenceSamples) * time.Second / time.Duration(sampleRate)
+			}
+
+			reachedMaxDuration := elapsedSinceStart >= maxDuration
+			reachedSilenceStop := detectedSpeech && elapsedSinceLastSpeech >= silenceDuration
+			_ = totalSamplesBefore // kept to preserve potential future use without changing semantics
+			shouldStop := reachedMaxDuration || reachedSilenceStop
+			mu.Unlock()
+
+			if shouldStop {
+				stopCapture()
+			}
+		},
+	}
+
+	device, err := malgo.InitDevice(mctx.Context, cfg, deviceCallbacks)
+	if err != nil {
+		return nil, err
+	}
+	defer device.Uninit()
+
+	if err := device.Start(); err != nil {
+		return nil, err
+	}
+
+	// Enforce maxDuration even if no audio callbacks are delivered by using a
+	// context with timeout for the blocking wait below. This ensures we don't
+	// hang indefinitely when the device is started but never produces data.
+	waitCtx, cancel := context.WithTimeout(ctx, maxDuration)
+	defer cancel()
+
+	select {
+	case <-waitCtx.Done():
+	case <-done:
+	}
+
+	if device.IsStarted() {
+		_ = device.Stop()
+	}
+
+	// If we exited due to context cancellation or timeout, surface that error
+	// to the caller instead of returning (possibly empty) audio with a nil error.
+	if err := waitCtx.Err(); err != nil {
+		return nil, err
+	}
+
+	mu.Lock()
+	recorded := append([]int16(nil), samples...)
+	mu.Unlock()
+
+	return int16ToPCMFloat(recorded), nil
 }
