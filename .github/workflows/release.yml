@@ -137,22 +137,14 @@ jobs:
             tags: "whisper"
             suffix: ""
             whisper: true
-            runner:
-              - self-hosted
-              - macOS
-              - ARM64
-            build_user: docker
+            runner: [ self-hosted, macOS, ARM64 ]
           - goos: darwin
             goarch: arm64
             cgo: "0"
             tags: ""
             suffix: "-nowhisper"
             whisper: false
-            runner:
-              - self-hosted
-              - macOS
-              - ARM64
-            build_user: docker
+            runner: [ self-hosted, macOS, ARM64 ]
           # Windows (no-whisper only for now)
           #- goos: windows
           #  goarch: amd64
@@ -179,18 +171,8 @@ jobs:
           cache: true
 
       - name: Download dependencies
-        env:
-          BUILD_USER: ${{ matrix.build_user }}
         run: |
-          if [ -n "$BUILD_USER" ] && [ "$BUILD_USER" != "docker" ]; then
-            echo "Unsupported build user: $BUILD_USER" >&2
-            exit 1
-          fi
-          if [ -n "$BUILD_USER" ]; then
-            sudo -H -u "$BUILD_USER" go mod download
-          else
-            go mod download
-          fi
+          go mod download
 
       - name: Set binary name
         id: binary
@@ -210,24 +192,7 @@ jobs:
 
       - name: Fetch whisper.cpp
         if: ${{ matrix.whisper }}
-        env:
-          BUILD_USER: ${{ matrix.build_user }}
         run: |
-          if [ -n "$BUILD_USER" ] && [ "$BUILD_USER" != "docker" ]; then
-            echo "Unsupported build user: $BUILD_USER" >&2
-            exit 1
-          fi
-          if [ -n "$BUILD_USER" ]; then
-            sudo -H -u "$BUILD_USER" git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
-            sudo -H -u "$BUILD_USER" cmake -S internal/whisper/whisper.cpp \
-              -B internal/whisper/whisper.cpp/build \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_SHARED_LIBS=OFF \
-              -DWHISPER_BUILD_TESTS=OFF \
-              -DWHISPER_BUILD_EXAMPLES=OFF \
-              -DWHISPER_BUILD_SERVER=OFF
-            sudo -H -u "$BUILD_USER" cmake --build internal/whisper/whisper.cpp/build --target whisper
-          else
             git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
             cmake -S internal/whisper/whisper.cpp \
               -B internal/whisper/whisper.cpp/build \
@@ -237,7 +202,6 @@ jobs:
               -DWHISPER_BUILD_EXAMPLES=OFF \
               -DWHISPER_BUILD_SERVER=OFF
             cmake --build internal/whisper/whisper.cpp/build --target whisper
-          fi
 
       - name: Build
         env:
@@ -245,7 +209,6 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: ${{ matrix.cgo }}
-          BUILD_USER: ${{ matrix.build_user }}
         run: |
           TAGS="${{ matrix.tags }}"
           BUILD_ARGS=(
@@ -256,15 +219,7 @@ jobs:
           if [ -n "$TAGS" ]; then
             BUILD_ARGS=(-tags "$TAGS" "${BUILD_ARGS[@]}")
           fi
-          if [ -n "$BUILD_USER" ] && [ "$BUILD_USER" != "docker" ]; then
-            echo "Unsupported build user: $BUILD_USER" >&2
-            exit 1
-          fi
-          if [ -n "$BUILD_USER" ]; then
-            sudo -H -u "$BUILD_USER" env GOOS="$GOOS" GOARCH="$GOARCH" GOARM="$GOARM" CGO_ENABLED="$CGO_ENABLED" go build "${BUILD_ARGS[@]}"
-          else
-            go build "${BUILD_ARGS[@]}"
-          fi
+          go build "${BUILD_ARGS[@]}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
