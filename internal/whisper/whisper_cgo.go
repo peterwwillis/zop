@@ -177,6 +177,16 @@ func RecordAndTranscribe() (string, error) {
 	return text, nil
 }
 
+// bytesToInt16View creates a zero-allocation int16 view over a byte slice.
+// The returned slice is only valid as long as the underlying byte slice is valid.
+// It is safe to use within the callback as we copy the data out before returning.
+func bytesToInt16View(b []byte) []int16 {
+	if len(b) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*int16)(unsafe.Pointer(&b[0])), len(b)/2)
+}
+
 func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Duration) ([]float32, error) {
 	mctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
 	if err != nil {
@@ -193,13 +203,13 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 	cfg.SampleRate = captureSampleRate
 
 	var (
-		mu             sync.Mutex
-		samples        []int16
-		lastSpeechAt   time.Time
-		detectedSpeech bool
-		stopOnce       sync.Once
-		done           = make(chan struct{})
-		startedAt      = time.Now()
+		mu              sync.Mutex
+		samples         []int16
+		detectedSpeech  bool
+		totalSamples    int64 // total samples captured across all channels
+		lastSpeechSample int64
+		stopOnce        sync.Once
+		done            = make(chan struct{})
 	)
 
 	stopCapture := func() {
@@ -210,20 +220,47 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 
 	deviceCallbacks := malgo.DeviceCallbacks{
 		Data: func(_, input []byte, _ uint32) {
-			frameSamples := bytesToInt16(input)
+			frameSamples := bytesToInt16View(input)
 			if len(frameSamples) == 0 {
 				return
 			}
 
-			now := time.Now()
 			mu.Lock()
 			samples = append(samples, frameSamples...)
+
+			// Number of frames in this callback (per channel).
+			frameCount := int64(len(frameSamples)) / int64(captureChannels)
+			if frameCount <= 0 {
+				mu.Unlock()
+				return
+			}
+
+			// Update sample counters.
+			totalSamplesBefore := totalSamples
+			totalSamples += frameCount
+
 			if hasSpeech(frameSamples, captureSpeechThreshold) {
 				detectedSpeech = true
-				lastSpeechAt = now
+				lastSpeechSample = totalSamples
 			}
-			reachedMaxDuration := now.Sub(startedAt) >= maxDuration
-			reachedSilenceStop := detectedSpeech && now.Sub(lastSpeechAt) >= silenceDuration
+
+			// Convert sample counts to durations using the known sample rate.
+			sampleRate := int64(captureSampleRate)
+			elapsedSinceStart := time.Duration(totalSamples) * time.Second / time.Duration(sampleRate)
+
+			var elapsedSinceLastSpeech time.Duration
+			if detectedSpeech {
+				silenceSamples := totalSamples - lastSpeechSample
+				if silenceSamples < 0 {
+					// Should not happen, but guard against negative durations.
+					silenceSamples = 0
+				}
+				elapsedSinceLastSpeech = time.Duration(silenceSamples) * time.Second / time.Duration(sampleRate)
+			}
+
+			reachedMaxDuration := elapsedSinceStart >= maxDuration
+			reachedSilenceStop := detectedSpeech && elapsedSinceLastSpeech >= silenceDuration
+			_ = totalSamplesBefore // kept to preserve potential future use without changing semantics
 			shouldStop := reachedMaxDuration || reachedSilenceStop
 			mu.Unlock()
 
@@ -243,13 +280,25 @@ func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Dura
 		return nil, err
 	}
 
+	// Enforce maxDuration even if no audio callbacks are delivered by using a
+	// context with timeout for the blocking wait below. This ensures we don't
+	// hang indefinitely when the device is started but never produces data.
+	waitCtx, cancel := context.WithTimeout(ctx, maxDuration)
+	defer cancel()
+
 	select {
-	case <-ctx.Done():
+	case <-waitCtx.Done():
 	case <-done:
 	}
 
 	if device.IsStarted() {
 		_ = device.Stop()
+	}
+
+	// If we exited due to context cancellation or timeout, surface that error
+	// to the caller instead of returning (possibly empty) audio with a nil error.
+	if err := waitCtx.Err(); err != nil {
+		return nil, err
 	}
 
 	mu.Lock()
