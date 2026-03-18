@@ -138,6 +138,7 @@ jobs:
             suffix: ""
             whisper: true
             runner: [ self-hosted, macOS, ARM64 ]
+            use_docker: true
           - goos: darwin
             goarch: arm64
             cgo: "0"
@@ -145,6 +146,7 @@ jobs:
             suffix: "-nowhisper"
             whisper: false
             runner: [ self-hosted, macOS, ARM64 ]
+            use_docker: true
           # Windows (no-whisper only for now)
           #- goos: windows
           #  goarch: amd64
@@ -172,7 +174,11 @@ jobs:
 
       - name: Download dependencies
         run: |
-          go mod download
+          if [ "${{ matrix.use_docker }}" = "true" ]; then
+            docker run --rm -v "$PWD:/workspace" -w /workspace golang:1.25-bookworm /bin/bash -lc "go mod download"
+          else
+            go mod download
+          fi
 
       - name: Set binary name
         id: binary
@@ -193,6 +199,22 @@ jobs:
       - name: Fetch whisper.cpp
         if: ${{ matrix.whisper }}
         run: |
+            if [ "${{ matrix.use_docker }}" = "true" ]; then
+              docker run --rm -v "$PWD:/workspace" -w /workspace golang:1.25-bookworm /bin/bash -lc "
+                apt-get update &&
+                apt-get install -y --no-install-recommends cmake git build-essential &&
+                rm -rf /var/lib/apt/lists/* &&
+                git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp &&
+                cmake -S internal/whisper/whisper.cpp \
+                  -B internal/whisper/whisper.cpp/build \
+                  -DCMAKE_BUILD_TYPE=Release \
+                  -DBUILD_SHARED_LIBS=OFF \
+                  -DWHISPER_BUILD_TESTS=OFF \
+                  -DWHISPER_BUILD_EXAMPLES=OFF \
+                  -DWHISPER_BUILD_SERVER=OFF &&
+                cmake --build internal/whisper/whisper.cpp/build --target whisper
+              "
+            else
             git clone --depth 1 --branch v1.8.3 https://github.com/ggerganov/whisper.cpp internal/whisper/whisper.cpp
             cmake -S internal/whisper/whisper.cpp \
               -B internal/whisper/whisper.cpp/build \
@@ -202,6 +224,7 @@ jobs:
               -DWHISPER_BUILD_EXAMPLES=OFF \
               -DWHISPER_BUILD_SERVER=OFF
             cmake --build internal/whisper/whisper.cpp/build --target whisper
+            fi
 
       - name: Build
         env:
@@ -210,16 +233,31 @@ jobs:
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
+          VERSION="${{ needs.resolve-tag.outputs.tag }}"
+          OUTPUT="${{ steps.binary.outputs.name }}"
           TAGS="${{ matrix.tags }}"
-          BUILD_ARGS=(
-            -ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=${{ needs.resolve-tag.outputs.tag }}"
-            -o "${{ steps.binary.outputs.name }}"
-            ./cmd/zop
-          )
-          if [ -n "$TAGS" ]; then
-            BUILD_ARGS=(-tags "$TAGS" "${BUILD_ARGS[@]}")
+          if [ "${{ matrix.use_docker }}" = "true" ]; then
+            docker run --rm \
+              -v "$PWD:/workspace" \
+              -w /workspace \
+              -e GOOS="$GOOS" \
+              -e GOARCH="$GOARCH" \
+              -e GOARM="$GOARM" \
+              -e CGO_ENABLED="$CGO_ENABLED" \
+              golang:1.25-bookworm /bin/bash -lc "
+                if [ -n \"$TAGS\" ]; then
+                  go build -tags \"$TAGS\" -ldflags \"-s -w -X github.com/peterwwillis/zop/internal/cli.Version=$VERSION\" -o \"$OUTPUT\" ./cmd/zop
+                else
+                  go build -ldflags \"-s -w -X github.com/peterwwillis/zop/internal/cli.Version=$VERSION\" -o \"$OUTPUT\" ./cmd/zop
+                fi
+              "
+          else
+            if [ -n "$TAGS" ]; then
+              go build -tags "$TAGS" -ldflags "-s -w -X github.com/peterwwillis/zop/internal/cli.Version=$VERSION" -o "$OUTPUT" ./cmd/zop
+            else
+              go build -ldflags "-s -w -X github.com/peterwwillis/zop/internal/cli.Version=$VERSION" -o "$OUTPUT" ./cmd/zop
+            fi
           fi
-          go build "${BUILD_ARGS[@]}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
