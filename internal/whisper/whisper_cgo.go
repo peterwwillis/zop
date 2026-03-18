@@ -21,13 +21,20 @@ package whisper
 import "C"
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/gen2brain/malgo"
 )
 
 // defaultModelURL is where the base English Whisper model is fetched when the
@@ -95,12 +102,17 @@ func ensureModel(path string) error {
 	return nil
 }
 
-// RecordAndTranscribe records audio from the default microphone for up to 30
-// seconds (stopped when the user presses Enter) and transcribes it using the
-// local Whisper model.  If the model file does not exist it is downloaded first.
-//
-// NOTE: Audio capture is platform-specific and must be adapted for each OS.
-// This stub shows the Whisper integration; callers must supply PCM audio data.
+const (
+	captureSampleRate          = 16000
+	captureChannels            = 1
+	captureMaxDuration         = 30 * time.Second
+	captureSilenceStopDuration = 1200 * time.Millisecond
+	captureSpeechThreshold     = 700
+)
+
+// RecordAndTranscribe records audio from the default microphone and transcribes
+// it using the local Whisper model. If the model file does not exist it is
+// downloaded first.
 func RecordAndTranscribe() (string, error) {
 	modelPath := defaultModelPath()
 
@@ -118,10 +130,128 @@ func RecordAndTranscribe() (string, error) {
 	}
 	defer C.whisper_free(ctx)
 
-	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-C or wait for silence.")
-	// In a real implementation, capture PCM audio here.
-	// For now we sleep briefly to demonstrate compilation works.
-	time.Sleep(100 * time.Millisecond)
+	recordCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	return "", fmt.Errorf("whisper audio capture not yet implemented on this platform")
+	fmt.Fprintln(os.Stderr, "Recording… press Ctrl-C or wait for silence.")
+	pcm, err := captureAudioPCM(recordCtx, captureMaxDuration, captureSilenceStopDuration)
+	if err != nil {
+		return "", fmt.Errorf("capturing audio: %w", err)
+	}
+	if len(pcm) == 0 {
+		return "", fmt.Errorf("no audio captured")
+	}
+
+	wparams := C.whisper_full_default_params(C.WHISPER_SAMPLING_GREEDY)
+	wparams.print_progress = false
+	wparams.print_realtime = false
+	wparams.print_timestamps = false
+	wparams.translate = false
+	wparams.no_context = true
+	wparams.single_segment = false
+
+	if rc := C.whisper_full(ctx, wparams, (*C.float)(unsafe.Pointer(&pcm[0])), C.int(len(pcm))); rc != 0 {
+		return "", fmt.Errorf("whisper inference failed (code %d)", int(rc))
+	}
+
+	var out strings.Builder
+	segments := int(C.whisper_full_n_segments(ctx))
+	for i := 0; i < segments; i++ {
+		seg := strings.TrimSpace(C.GoString(C.whisper_full_get_segment_text(ctx, C.int(i))))
+		if seg == "" {
+			continue
+		}
+		if out.Len() > 0 {
+			out.WriteByte(' ')
+		}
+		out.WriteString(seg)
+	}
+
+	text := strings.TrimSpace(out.String())
+	if text == "" {
+		return "", fmt.Errorf("no speech recognized")
+	}
+	return text, nil
+}
+
+func captureAudioPCM(ctx context.Context, maxDuration, silenceDuration time.Duration) ([]float32, error) {
+	mctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = mctx.Uninit()
+		mctx.Free()
+	}()
+
+	cfg := malgo.DefaultDeviceConfig(malgo.Capture)
+	cfg.Capture.Format = malgo.FormatS16
+	cfg.Capture.Channels = captureChannels
+	cfg.SampleRate = captureSampleRate
+
+	var (
+		mu             sync.Mutex
+		samples        []int16
+		lastSpeechAt   time.Time
+		detectedSpeech bool
+		stopOnce       sync.Once
+		done           = make(chan struct{})
+		startedAt      = time.Now()
+	)
+
+	stopCapture := func() {
+		stopOnce.Do(func() {
+			close(done)
+		})
+	}
+
+	deviceCallbacks := malgo.DeviceCallbacks{
+		Data: func(_, input []byte, _ uint32) {
+			frameSamples := bytesToInt16(input)
+			if len(frameSamples) == 0 {
+				return
+			}
+
+			now := time.Now()
+			mu.Lock()
+			samples = append(samples, frameSamples...)
+			if hasSpeech(frameSamples, captureSpeechThreshold) {
+				detectedSpeech = true
+				lastSpeechAt = now
+			}
+			shouldStop := now.Sub(startedAt) >= maxDuration || (detectedSpeech && now.Sub(lastSpeechAt) >= silenceDuration)
+			mu.Unlock()
+
+			if shouldStop {
+				stopCapture()
+			}
+		},
+	}
+
+	device, err := malgo.InitDevice(mctx.Context, cfg, deviceCallbacks)
+	if err != nil {
+		return nil, err
+	}
+	defer device.Uninit()
+
+	if err := device.Start(); err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+	case <-done:
+	}
+
+	if device.IsStarted() {
+		if err := device.Stop(); err != nil {
+			return nil, err
+		}
+	}
+
+	mu.Lock()
+	recorded := append([]int16(nil), samples...)
+	mu.Unlock()
+
+	return int16ToPCMFloat(recorded), nil
 }
