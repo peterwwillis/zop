@@ -13,5 +13,11 @@ var ErrNotBuiltIn = errors.New("whisper support not compiled in (download a whis
 // RecordAndTranscribe records audio from the microphone and returns the
 // transcribed text.  This stub always returns ErrNotBuiltIn.
 func RecordAndTranscribe() (string, error) {
+	return RecordAndTranscribeWithProgress(nil)
+}
+
+// RecordAndTranscribeWithProgress records audio from the microphone and returns
+// the transcribed text. This stub always returns ErrNotBuiltIn.
+func RecordAndTranscribeWithProgress(_ func(string)) (string, error) {
 	return "", ErrNotBuiltIn
 }

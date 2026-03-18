@@ -32,6 +32,7 @@ type globalFlags struct {
 	configFile string
 	agent      string
 	verbose    bool
+	debug      bool
 }
 
 func newRootCmd() *cobra.Command {
@@ -65,6 +66,7 @@ The prompt can be supplied as:
 	root.PersistentFlags().StringVarP(&gf.configFile, "config", "C", "", "config file (default: ~/.config/zop/config.toml)")
 	root.PersistentFlags().StringVarP(&gf.agent, "agent", "a", "default", "agent to use (defined in config)")
 	root.PersistentFlags().BoolVarP(&gf.verbose, "verbose", "v", false, "verbose output")
+	root.PersistentFlags().BoolVarP(&gf.debug, "debug", "d", false, "enable debug diagnostics (sets ZOP_DEBUG_VAD=1)")
 
 	// Completion-specific flags (attached to root so they appear in help)
 	root.Flags().StringP("chat", "c", "", "chat session name for multi-turn conversations")
@@ -112,9 +114,18 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	out := cmd.OutOrStdout()
 	errOut := cmd.ErrOrStderr()
 
+	if gf.debug {
+		if err := os.Setenv("ZOP_DEBUG_VAD", "1"); err != nil {
+			return fmt.Errorf("enabling debug diagnostics: %w", err)
+		}
+	}
+
 	if gf.verbose {
 		fmt.Fprintf(errOut, "[zop] agent=%s provider=%s model=%s\n",
 			gf.agent, agent.Provider, modelCfg.ModelID)
+		if gf.debug {
+			fmt.Fprintln(errOut, "[zop] debug diagnostics enabled (ZOP_DEBUG_VAD=1)")
+		}
 	}
 
 	voice, _ := cmd.Flags().GetBool("voice")
@@ -131,10 +142,29 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		return fmt.Errorf("cannot combine --prompt with positional prompt arguments")
 	}
 
+	readVoicePrompt := func() (string, error) {
+		var progressFn func(string)
+		if gf.verbose {
+			fmt.Fprintln(errOut, "[zop] sending voice input to Whisper for transcription")
+			progressFn = func(msg string) {
+				fmt.Fprintf(errOut, "[zop] %s\n", msg)
+			}
+		}
+		voicePrompt, rerr := whisper.RecordAndTranscribeWithProgress(progressFn)
+		if rerr != nil {
+			return "", rerr
+		}
+		voicePrompt = strings.TrimSpace(voicePrompt)
+		if gf.verbose {
+			fmt.Fprintf(errOut, "[zop] Whisper transcription complete (%d chars)\n", len(voicePrompt))
+		}
+		return voicePrompt, nil
+	}
+
 	var initialPrompt string
 	switch {
 	case voice:
-		voicePrompt, rerr := whisper.RecordAndTranscribe()
+		voicePrompt, rerr := readVoicePrompt()
 		if rerr != nil {
 			return fmt.Errorf("voice input: %w", rerr)
 		}
@@ -204,6 +234,9 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		if prompt == "" {
 			return nil
 		}
+		if gf.verbose {
+			fmt.Fprintf(errOut, "[zop] sending text to AI (%d chars)\n", len(prompt))
+		}
 		messages = append(messages, provider.Message{Role: "user", Content: prompt})
 		req := provider.CompletionRequest{
 			Messages:   messages,
@@ -237,6 +270,18 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 
 	if !interactive {
 		return nil
+	}
+
+	if voice {
+		for {
+			voicePrompt, rerr := readVoicePrompt()
+			if rerr != nil {
+				return fmt.Errorf("voice input: %w", rerr)
+			}
+			if err := sendPrompt(voicePrompt); err != nil {
+				return err
+			}
+		}
 	}
 
 	reader := bufio.NewReader(cmd.InOrStdin())

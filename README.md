@@ -50,7 +50,13 @@ zop --stream "Write a haiku about Go"
 
 # Voice input (whisper-enabled build)
 zop --voice
+
+# Voice input with VAD debug diagnostics
+zop --voice --debug
 ```
+
+Whisper's native initialization logs are suppressed by default and are shown
+when `--debug` is enabled.
 
 ## Configuration
 

@@ -18,6 +18,17 @@ package whisper
 // #cgo linux LDFLAGS: -fopenmp
 // #include <stdlib.h>
 // #include "whisper.h"
+// static void whisper_log_callback_silent(enum ggml_log_level level, const char * text, void * user_data) {
+//   (void) level;
+//   (void) text;
+//   (void) user_data;
+// }
+// static void whisper_log_set_silent(void) {
+//   whisper_log_set(whisper_log_callback_silent, NULL);
+// }
+// static void whisper_log_set_default(void) {
+//   whisper_log_set(NULL, NULL);
+// }
 import "C"
 
 import (
@@ -103,6 +114,17 @@ func ensureModel(path string) error {
 	return nil
 }
 
+// configureWhisperNativeLogging controls whisper.cpp's native stderr logging.
+// By default we silence it to keep CLI output clean. When ZOP_DEBUG_VAD=1 is
+// set (e.g. via `zop --debug`), we restore whisper's default logger.
+func configureWhisperNativeLogging() {
+	if os.Getenv("ZOP_DEBUG_VAD") == "1" {
+		C.whisper_log_set_default()
+		return
+	}
+	C.whisper_log_set_silent()
+}
+
 const (
 	captureSampleRate       = 16000
 	captureChannels         = 1
@@ -131,11 +153,19 @@ const (
 // it using the local Whisper model. If the model file does not exist it is
 // downloaded first.
 func RecordAndTranscribe() (string, error) {
+	return RecordAndTranscribeWithProgress(nil)
+}
+
+// RecordAndTranscribeWithProgress records audio and transcribes it with Whisper.
+// If progress is non-nil, it receives lifecycle messages suitable for verbose
+// stderr logging by callers.
+func RecordAndTranscribeWithProgress(progress func(string)) (string, error) {
 	modelPath := defaultModelPath()
 
 	if err := ensureModel(modelPath); err != nil {
 		return "", fmt.Errorf("whisper model setup: %w", err)
 	}
+	configureWhisperNativeLogging()
 
 	cModel := C.CString(modelPath)
 	defer C.free(unsafe.Pointer(cModel))
@@ -172,6 +202,9 @@ func RecordAndTranscribe() (string, error) {
 	}
 	if len(pcm) == 0 {
 		return "", fmt.Errorf("no audio captured")
+	}
+	if progress != nil {
+		progress("recording stopped; Whisper transcription started")
 	}
 
 	wparams := C.whisper_full_default_params(C.WHISPER_SAMPLING_GREEDY)
