@@ -49,14 +49,15 @@ VERSION      ?= dev
 ANDROID_APP_ID ?= com.zop.app
 ANDROID_ARCH   ?= arm64
 
-# Optional: space-separated build tags (e.g. BUILD_TAGS=whisper)
-BUILD_TAGS   ?=
+# Build tags — defaults to whisper; override with BUILD_TAGS="" for a no-whisper build
+BUILD_TAGS   ?= whisper
 # Optional: extra arguments forwarded to go test (e.g. TEST_ARGS="-race -coverprofile=coverage.out")
 TEST_ARGS    ?=
 # Appended to the release binary name before the OS extension (e.g. BINARY_SUFFIX=-nowhisper)
 BINARY_SUFFIX ?=
 
-CGO_ENABLED ?= 0
+# CGO required for whisper; override with CGO_ENABLED=0 when BUILD_TAGS is empty
+CGO_ENABLED ?= 1
 
 # Default to the host platform so that build-bin works without Go pre-installed.
 GOOS   ?= $(_HOST_OS)
@@ -79,6 +80,11 @@ BINARY ?= $(_binary_name)
 # -tags flag, empty when BUILD_TAGS is unset
 _tag_args = $(if $(BUILD_TAGS),-tags $(BUILD_TAGS),)
 
+# Prerequisite that pulls in whisper-fetch whenever the whisper tag is active.
+# Evaluates to empty when BUILD_TAGS does not contain 'whisper', so overriding
+# BUILD_TAGS="" also drops the whisper-fetch dependency automatically.
+_whisper_dep = $(if $(filter whisper,$(BUILD_TAGS)),whisper-fetch,)
+
 # ==============================================================
 # Phony targets
 # ==============================================================
@@ -99,18 +105,18 @@ all: build
 deps:
 	go mod download
 
-## vet: Run go vet (respects BUILD_TAGS)
-vet:
-	go vet $(_tag_args) ./...
+## vet: Run go vet (respects BUILD_TAGS; fetches whisper.cpp when BUILD_TAGS=whisper)
+vet: $(_whisper_dep)
+	CGO_ENABLED=$(CGO_ENABLED) go vet $(_tag_args) ./...
 
-## build: Compile all packages (respects BUILD_TAGS)
-build:
-	go build $(_tag_args) ./...
+## build: Compile all packages (respects BUILD_TAGS; fetches whisper.cpp when BUILD_TAGS=whisper)
+build: $(_whisper_dep)
+	CGO_ENABLED=$(CGO_ENABLED) go build $(_tag_args) ./...
 
-## test: Run tests (respects BUILD_TAGS and TEST_ARGS)
+## test: Run tests (respects BUILD_TAGS and TEST_ARGS; fetches whisper.cpp when BUILD_TAGS=whisper)
 ##   Example: make test TEST_ARGS="-race -coverprofile=coverage.out"
-test:
-	go test $(_tag_args) $(TEST_ARGS) ./...
+test: $(_whisper_dep)
+	CGO_ENABLED=$(CGO_ENABLED) go test $(_tag_args) $(TEST_ARGS) ./...
 
 # ==============================================================
 # Whisper.cpp support
@@ -170,6 +176,9 @@ build-bin:
 		-ldflags="-s -w -X github.com/peterwwillis/zop/internal/cli.Version=$(VERSION)" \
 		-o $(BINARY) \
 		./cmd/zop
+
+build-bin-clean:
+	rm -f zop-*
 
 # ==============================================================
 # Android APK

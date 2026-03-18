@@ -123,21 +123,132 @@ zop chat show my-chat      # show messages in a session
 zop chat delete my-chat    # delete a session
 ```
 
-## Building with Whisper Support
+## Building from Source
 
-Whisper voice-input support is enabled in whisper-capable release binaries. To
-build from source with Whisper support enabled:
+### Prerequisites
+
+- **GNU Make**
+- **curl** and **tar** / **unzip** (for Go toolchain download)
+- **cmake** (for whisper-enabled builds)
+- **Docker** (for Android APK builds via `fyne-cross`)
+
+### 1 — Install Go
+
+If Go is not already installed, the Makefile can download and install the
+version declared in `go.mod` automatically:
 
 ```sh
-go build -tags whisper -o zop ./cmd/zop
+make setup-go
 ```
 
-Requires the [whisper.cpp](https://github.com/ggerganov/whisper.cpp) library
-and a Whisper model file. Set `ZOP_WHISPER_MODEL` to point to the model path
+The toolchain is installed to `~/.local/go/<version>/` and is activated
+automatically for all subsequent `make` targets — no shell changes required.
+
+To install a specific version or to a custom path:
+
+```sh
+make setup-go GO_VERSION=1.23.0
+make setup-go GO_INSTALL_DIR=/opt/go/1.24.0
+```
+
+### 2 — Build
+
+The default build includes **Whisper voice support** (fetches and compiles
+`whisper.cpp` automatically):
+
+```sh
+make deps    # download Go module dependencies
+make build   # build all packages with -tags whisper
+```
+
+Or run both in one shot:
+
+```sh
+make deps build
+```
+
+To build **without** Whisper:
+
+```sh
+make build BUILD_TAGS="" CGO_ENABLED=0
+```
+
+### 3 — Test & Vet
+
+```sh
+make test                                          # with whisper (default)
+make test TEST_ARGS="-race -coverprofile=out.cov"  # with race detector + coverage
+make vet                                           # go vet (with whisper by default)
+
+make test BUILD_TAGS="" CGO_ENABLED=0              # without whisper
+```
+
+### 4 — Release binary
+
+Build a standalone binary for the current host:
+
+```sh
+make build-bin VERSION=v1.2.3
+```
+
+Cross-compile (whisper-enabled requires native CGO, so cross-compilation only
+works cleanly for the no-whisper variant):
+
+```sh
+# Whisper-enabled — must run on the target platform
+make build-bin GOOS=linux GOARCH=arm64 VERSION=v1.2.3
+
+# No-whisper — cross-compilation works anywhere
+make build-bin GOOS=linux GOARCH=amd64 BUILD_TAGS="" CGO_ENABLED=0 BINARY_SUFFIX=-nowhisper VERSION=v1.2.3
+```
+
+The output binary is named `zop-<os>-<arch>[<suffix>][.exe]` by default;
+override with `BINARY=<name>`.
+
+### 5 — Android APK
+
+Requires Docker (used internally by `fyne-cross`):
+
+```sh
+go install github.com/fyne-io/fyne-cross@latest
+make android-apk
+```
+
+Output: `zop-android-arm64.apk`
+
+### Makefile quick reference
+
+| Target | Description |
+|---|---|
+| `make setup-go` | Download & install Go from `go.mod` |
+| `make deps` | `go mod download` |
+| `make build` | Build all packages (whisper by default) |
+| `make test` | Run tests (whisper by default) |
+| `make vet` | Run `go vet` |
+| `make build-bin` | Build release binary for current platform |
+| `make whisper-fetch` | Clone & compile `whisper.cpp` |
+| `make whisper-clean` | Remove `whisper.cpp` build tree |
+| `make android-apk` | Build Android APK via `fyne-cross` |
+| `make setup-go-clean` | Remove the installed Go toolchain |
+
+All variables (`GO_VERSION`, `BUILD_TAGS`, `CGO_ENABLED`, `GOOS`, `GOARCH`,
+`VERSION`, …) can be overridden on the command line.
+
+## Building with Whisper Support
+
+Whisper support is enabled by default when building with `make`. To build
+manually with raw `go`:
+
+```sh
+make whisper-fetch                      # clone + compile whisper.cpp
+CGO_ENABLED=1 go build -tags whisper -o zop ./cmd/zop
+```
+
+Set `ZOP_WHISPER_MODEL` to override the model path
 (default: `~/.local/share/zop/whisper/ggml-base.en.bin`).
 
-To build a smaller binary without Whisper support, omit the build tag (or grab
-release artifacts suffixed with `-nowhisper`).
+To build a smaller binary without Whisper, omit the tag, or grab
+release artifacts suffixed with `-nowhisper`.
 
 ## Mobile Roadmap
 
@@ -148,15 +259,12 @@ workflow.
 ## Android App (Fyne)
 
 Download the `zop-android-arm64.apk` asset from the latest GitHub Release, or
-build it locally with `fyne-cross`:
+build it locally:
 
 ```sh
 go install github.com/fyne-io/fyne-cross@latest
-fyne-cross android -app-id com.zop.app -arch arm64 ./cmd/zop-mobile
+make android-apk
 ```
-
-The APK will be created under `fyne-cross/dist/android/`. Copy it to a friendly
-location (for example `zop-android-arm64.apk`) before installing.
 
 ### Install on a physical Android device (e.g., Samsung Galaxy S10e)
 
@@ -180,10 +288,10 @@ adb uninstall com.zop.app
 ## Development
 
 ```sh
-go build ./...
-go test ./...
-go vet ./...
+make deps build test vet
 ```
+
+See [Building from Source](#building-from-source) for the full workflow.
 
 ## License
 
