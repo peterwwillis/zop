@@ -393,6 +393,12 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 
 	if voice {
 		for {
+			if speaker != nil {
+				_ = speaker.Wait()
+				// Additional safety delay to ensure hardware buffers are silent
+				// and mic doesn't catch the tail end of the AI's voice.
+				time.Sleep(500 * time.Millisecond)
+			}
 			voicePrompt, rerr := readVoicePrompt()
 			if rerr != nil {
 				return fmt.Errorf("voice input: %w", rerr)

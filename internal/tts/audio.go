@@ -74,14 +74,15 @@ func (p *audioPlayer) Wait() {
 		if empty {
 			break
 		}
-		if time.Since(start) > 15*time.Second {
+		if time.Since(start) > 300*time.Second { // 5 minute timeout for long responses
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	
 	// Final drain delay to ensure the last buffer actually finished playing
-	time.Sleep(200 * time.Millisecond)
+	// and any hardware/OS buffers are empty.
+	time.Sleep(1000 * time.Millisecond)
 }
 
 func (p *audioPlayer) onAudio(pOutput, pInput []byte, frameCount uint32) {
