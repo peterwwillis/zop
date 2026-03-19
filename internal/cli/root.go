@@ -164,6 +164,11 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		cfg.TTS.ModelName = ttsModel
 	}
 
+	if gf.debug {
+		fmt.Fprintf(errOut, "[zop] debug: TTS settings: speed=%.2f delay=%dms model=%q\n", 
+			cfg.TTS.Speed, cfg.TTS.SafetyDelayMS, cfg.TTS.ModelName)
+	}
+
 	var speaker tts.Speaker
 	if voiceOut {
 		speaker, err = tts.NewSpeaker(cfg.TTS)
@@ -389,6 +394,20 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 				if err := speaker.Speak(context.Background(), resp.Content); err != nil {
 					fmt.Fprintf(errOut, "[zop] warning: could not output voice: %v\n", err)
 				}
+
+				if gf.verbose {
+					fmt.Fprint(errOut, "[zop] waiting for AI to finish speaking...")
+				}
+				_ = speaker.Wait()
+				if gf.verbose {
+					fmt.Fprintln(errOut, " done.")
+				}
+
+				if cfg.TTS.SafetyDelayMS > 0 {
+					delay := time.Duration(cfg.TTS.SafetyDelayMS) * time.Millisecond
+					fmt.Fprintf(errOut, "[zop] turn safety delay (%v)...\n", delay)
+					time.Sleep(delay)
+				}
 			}
 			messages = append(reqMessages, provider.Message{Role: "assistant", Content: resp.Content})
 			if chatName != "" && sessionMgr != nil {
@@ -414,17 +433,6 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	if voice {
 		isAwake := wakeWord == "" // If no wake word, always awake
 		for {
-			if speaker != nil {
-				_ = speaker.Wait()
-			}
-
-			// Apply configured safety delay
-			if cfg.TTS.SafetyDelayMS > 0 {
-				delay := time.Duration(cfg.TTS.SafetyDelayMS) * time.Millisecond
-				fmt.Fprintf(errOut, "[zop] starting voice safety delay (%v)\n", delay)
-				time.Sleep(delay)
-			}
-
 			voicePrompt, rerr := readVoicePrompt()
 			if rerr != nil {
 				return fmt.Errorf("voice input: %w", rerr)

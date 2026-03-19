@@ -9,10 +9,11 @@ import (
 )
 
 type audioPlayer struct {
-	mctx   *malgo.AllocatedContext
-	device *malgo.Device
-	mu     sync.Mutex
-	queue  [][]float32
+	mctx          *malgo.AllocatedContext
+	device        *malgo.Device
+	mu            sync.Mutex
+	queue         [][]float32
+	samplesToWait int64
 }
 
 func newAudioPlayer(sampleRate int) (*audioPlayer, error) {
@@ -50,9 +51,6 @@ func newAudioPlayer(sampleRate int) (*audioPlayer, error) {
 		return nil, err
 	}
 
-	// Give it a moment to start up
-	time.Sleep(50 * time.Millisecond)
-
 	return p, nil
 }
 
@@ -60,47 +58,44 @@ func (p *audioPlayer) Play(samples []float32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.queue = append(p.queue, samples)
+	p.samplesToWait += int64(len(samples))
 }
 
 func (p *audioPlayer) Wait() {
-	// Wait a tiny bit to ensure callbacks have a chance to start
-	time.Sleep(50 * time.Millisecond)
-
+	// 1. Wait until queue is empty and all samples have been processed by the callback.
 	start := time.Now()
 	for {
 		p.mu.Lock()
-		empty := len(p.queue) == 0
+		busy := len(p.queue) > 0 || p.samplesToWait > 0
 		p.mu.Unlock()
-		if empty {
+		if !busy {
 			break
 		}
-		if time.Since(start) > 300*time.Second { // 5 minute timeout for long responses
+		if time.Since(start) > 100*time.Second {
 			break
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
-	
-	// Small drain delay to ensure the last buffer finishes.
-	// The CLI handles the longer safety delay.
+
+	// 2. Hardware Buffer Drain
+	// Even after the callback processes the last sample, there is still audio in the 
+	// hardware buffer. We MUST wait for this to finish to avoid the mic catching it.
 	time.Sleep(100 * time.Millisecond)
 }
 
 func (p *audioPlayer) onAudio(pOutput, pInput []byte, frameCount uint32) {
-	// ALWAYS clear pOutput (silence) first
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// ALWAYS clear pOutput (silence)
 	for i := range pOutput {
 		pOutput[i] = 0
 	}
-
-	if !p.mu.TryLock() {
-		return
-	}
-	defer p.mu.Unlock()
 
 	if len(p.queue) == 0 {
 		return
 	}
 
-	// Each float32 is 4 bytes.
 	totalBytesNeeded := uint32(len(pOutput))
 	var bytesWritten uint32
 
@@ -118,6 +113,7 @@ func (p *audioPlayer) onAudio(pOutput, pInput []byte, frameCount uint32) {
 			copy(pOutput[bytesWritten:], src[:toCopy])
 			
 			bytesWritten += toCopy
+			p.samplesToWait -= int64(toCopy / 4)
 
 			if toCopy == bytesInCurrent {
 				p.queue = p.queue[1:]
