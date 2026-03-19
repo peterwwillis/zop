@@ -96,6 +96,19 @@ The prompt can be supplied as:
 	return root
 }
 
+func normalizeText(s string) string {
+	s = strings.ToLower(s)
+	var sb strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune(' ')
+		}
+	}
+	return strings.Join(strings.Fields(sb.String()), " ")
+}
+
 func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	// Load config
 	cfg, err := config.Load(gf.configFile)
@@ -228,11 +241,15 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	var initialPrompt string
 	switch {
 	case voice:
-		voicePrompt, rerr := readVoicePrompt()
-		if rerr != nil {
-			return fmt.Errorf("voice input: %w", rerr)
+		// If we have a wake word in interactive mode, don't record an initial prompt.
+		// Let the loop handle it so we start in the "sleeping" state.
+		if wakeWord == "" || !interactive {
+			voicePrompt, rerr := readVoicePrompt()
+			if rerr != nil {
+				return fmt.Errorf("voice input: %w", rerr)
+			}
+			initialPrompt = voicePrompt
 		}
-		initialPrompt = voicePrompt
 	case promptFlag != "":
 		initialPrompt = promptFlag
 	case len(args) > 0:
@@ -433,6 +450,9 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	if voice {
 		isAwake := wakeWord == "" // If no wake word, always awake
 		for {
+			if !isAwake && gf.verbose {
+				fmt.Fprintf(errOut, "[zop] waiting for wake word %q...\n", wakeWord)
+			}
 			voicePrompt, rerr := readVoicePrompt()
 			if rerr != nil {
 				return fmt.Errorf("voice input: %w", rerr)
@@ -445,21 +465,32 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 			}
 
 			if wakeWord != "" || stopWord != "" {
-				lowerPrompt := strings.ToLower(voicePrompt)
+				normPrompt := normalizeText(voicePrompt)
 				
-				if stopWord != "" && strings.Contains(lowerPrompt, strings.ToLower(stopWord)) {
-					fmt.Fprintf(errOut, "[zop] stop word detected: %s (sleeping)\n", stopWord)
+				if stopWord != "" && strings.Contains(normPrompt, normalizeText(stopWord)) {
+					msg := "Stopping. Waiting for wake word."
+					fmt.Fprintf(errOut, "[zop] %s\n", msg)
+					if speaker != nil {
+						_ = speaker.Speak(context.Background(), msg)
+						_ = speaker.Wait()
+					}
 					isAwake = false
 					continue
 				}
 				
-				if wakeWord != "" && strings.Contains(lowerPrompt, strings.ToLower(wakeWord)) {
-					fmt.Fprintf(errOut, "[zop] wake word detected: %s (awake)\n", wakeWord)
+				if wakeWord != "" && strings.Contains(normPrompt, normalizeText(wakeWord)) {
+					msg := "Ready."
+					fmt.Fprintf(errOut, "[zop] %s\n", msg)
+					if speaker != nil {
+						_ = speaker.Speak(context.Background(), msg)
+						_ = speaker.Wait()
+					}
 					isAwake = true
-					// Remove wake word from prompt if it's the start
-					voicePrompt = strings.TrimSpace(strings.Replace(lowerPrompt, strings.ToLower(wakeWord), "", 1))
-					if voicePrompt == "" {
-						fmt.Fprintf(errOut, "[zop] listening...\n")
+					
+					// Optional: remove wake word from prompt
+					// This is tricky with normalized matching, so we just use the original
+					// logic but skip if it was JUST the wake word.
+					if normalizeText(voicePrompt) == normalizeText(wakeWord) {
 						continue
 					}
 				}
