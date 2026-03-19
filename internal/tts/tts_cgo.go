@@ -23,6 +23,8 @@ import (
 	"path/filepath"
 	"sync"
 	"unsafe"
+
+	"github.com/peterwwillis/zop/internal/config"
 )
 
 const (
@@ -33,39 +35,55 @@ const (
 type cgoSpeaker struct {
 	tts    *C.SherpaOnnxOfflineTts
 	player *audioPlayer
+	speed  float32
 	mu     sync.Mutex
 }
 
-func newSpeaker() (Speaker, error) {
+func newSpeaker(cfg config.TTSConfig) (Speaker, error) {
 	modelPath := defaultModelPath()
-	if err := ensureModel(modelPath); err != nil {
+	
+	// Override defaults if provided in config
+	url := defaultModelURL
+	if cfg.ModelURL != "" {
+		url = cfg.ModelURL
+	}
+	name := modelName
+	if cfg.ModelName != "" {
+		name = cfg.ModelName
+	}
+	piperModel := "en_US-amy-low.onnx"
+	if cfg.PiperModel != "" {
+		piperModel = cfg.PiperModel
+	}
+
+	if err := ensureModel(modelPath, url, name); err != nil {
 		return nil, fmt.Errorf("ensuring model: %w", err)
 	}
 
 	// Configuration for sherpa-onnx
-	var config C.SherpaOnnxOfflineTtsConfig
-	C.memset(unsafe.Pointer(&config), 0, C.sizeof_SherpaOnnxOfflineTtsConfig)
+	var cConfig C.SherpaOnnxOfflineTtsConfig
+	C.memset(unsafe.Pointer(&cConfig), 0, C.sizeof_SherpaOnnxOfflineTtsConfig)
 
-	modelDir := filepath.Join(modelPath, modelName)
+	modelDir := filepath.Join(modelPath, name)
 	
-	cModel := C.CString(filepath.Join(modelDir, "en_US-amy-low.onnx"))
+	cModel := C.CString(filepath.Join(modelDir, piperModel))
 	defer C.free(unsafe.Pointer(cModel))
 	cTokens := C.CString(filepath.Join(modelDir, "tokens.txt"))
 	defer C.free(unsafe.Pointer(cTokens))
 	cDataDir := C.CString(filepath.Join(modelDir, "espeak-ng-data"))
 	defer C.free(unsafe.Pointer(cDataDir))
 
-	config.model.vits.model = cModel
-	config.model.vits.tokens = cTokens
-	config.model.vits.data_dir = cDataDir
-	config.model.num_threads = 1
-	config.model.debug = 0
+	cConfig.model.vits.model = cModel
+	cConfig.model.vits.tokens = cTokens
+	cConfig.model.vits.data_dir = cDataDir
+	cConfig.model.num_threads = 1
+	cConfig.model.debug = 0
 	
 	cProvider := C.CString("cpu")
 	defer C.free(unsafe.Pointer(cProvider))
-	config.model.provider = cProvider
+	cConfig.model.provider = cProvider
 
-	tts := C.SherpaOnnxCreateOfflineTts(&config)
+	tts := C.SherpaOnnxCreateOfflineTts(&cConfig)
 	if tts == nil {
 		return nil, fmt.Errorf("failed to create sherpa-onnx TTS instance")
 	}
@@ -78,10 +96,24 @@ func newSpeaker() (Speaker, error) {
 		return nil, fmt.Errorf("failed to create audio player: %w", err)
 	}
 
+	speed := float32(1.0)
+	if cfg.Speed > 0 {
+		speed = cfg.Speed
+	}
+
 	return &cgoSpeaker{
 		tts:    tts,
 		player: player,
+		speed:  speed,
 	}, nil
+}
+
+func (s *cgoSpeaker) SetSpeed(speed float32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if speed > 0 {
+		s.speed = speed
+	}
 }
 
 func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
@@ -89,8 +121,12 @@ func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
 		return nil
 	}
 
+	s.mu.Lock()
+	speed := s.speed
+	s.mu.Unlock()
+
 	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		fmt.Fprintf(os.Stderr, "[zop] tts: generating audio for %d chars...\n", len(text))
+		fmt.Fprintf(os.Stderr, "[zop] tts: generating audio for %d chars at speed %.2f...\n", len(text), speed)
 	}
 
 	s.mu.Lock()
@@ -99,7 +135,7 @@ func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
 	cText := C.CString(text)
 	defer C.free(unsafe.Pointer(cText))
 
-	audio := C.SherpaOnnxOfflineTtsGenerate(s.tts, cText, 0, 1.0)
+	audio := C.SherpaOnnxOfflineTtsGenerate(s.tts, cText, 0, C.float(speed))
 	if audio == nil {
 		return fmt.Errorf("failed to generate audio")
 	}
@@ -162,25 +198,25 @@ func defaultModelPath() string {
 	return filepath.Join(home, ".local", "share", "zop", "tts")
 }
 
-func ensureModel(path string) error {
-	if _, err := os.Stat(filepath.Join(path, modelName)); err == nil {
+func ensureModel(path, url, name string) error {
+	if _, err := os.Stat(filepath.Join(path, name)); err == nil {
 		return nil // already present
 	}
 
-	fmt.Fprintf(os.Stderr, "[zop] TTS model not found at %q – downloading from %s …\n", path, defaultModelURL)
+	fmt.Fprintf(os.Stderr, "[zop] TTS model not found at %q – downloading from %s …\n", path, url)
 
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return fmt.Errorf("creating model directory: %w", err)
 	}
 
-	resp, err := http.Get(defaultModelURL)
+	resp, err := http.Get(url)
 	if err != nil {
 		return fmt.Errorf("downloading model: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("downloading model: HTTP %d from %s", resp.StatusCode, defaultModelURL)
+		return fmt.Errorf("downloading model: HTTP %d from %s", resp.StatusCode, url)
 	}
 
 	if err := extractTarBz2(resp.Body, path); err != nil {

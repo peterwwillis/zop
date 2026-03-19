@@ -57,7 +57,7 @@ func NewController(configPath, sessionName, agentName string) (*Controller, erro
 		agentName = defaultAgentName(cfg)
 	}
 
-	speaker, _ := tts.NewSpeaker()
+	speaker, _ := tts.NewSpeaker(cfg.TTS)
 
 	ctrl := &Controller{
 		cfg:         cfg,
@@ -130,6 +130,12 @@ func (c *Controller) ReloadConfig() error {
 	if _, ok := c.cfg.Agents[c.agentName]; !ok {
 		c.agentName = defaultAgentName(c.cfg)
 	}
+
+	if c.speaker != nil {
+		_ = c.speaker.Close()
+	}
+	c.speaker, _ = tts.NewSpeaker(c.cfg.TTS)
+
 	return c.reloadProviderLocked()
 }
 
@@ -146,6 +152,13 @@ func (c *Controller) SetAgent(name string) error {
 	}
 	c.agentName = name
 	return c.reloadProviderLocked()
+}
+
+// TTSConfig returns the current TTS configuration.
+func (c *Controller) TTSConfig() config.TTSConfig {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cfg.TTS
 }
 
 // ClearSession clears the session history on disk and in memory.

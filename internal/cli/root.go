@@ -146,7 +146,7 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 
 	var speaker tts.Speaker
 	if voiceOut {
-		speaker, err = tts.NewSpeaker()
+		speaker, err = tts.NewSpeaker(cfg.TTS)
 		if err != nil {
 			return fmt.Errorf("initializing voice output: %w", err)
 		}
@@ -395,9 +395,17 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		for {
 			if speaker != nil {
 				_ = speaker.Wait()
-				// Additional safety delay to ensure hardware buffers are silent
-				// and mic doesn't catch the tail end of the AI's voice.
-				time.Sleep(500 * time.Millisecond)
+				
+				delay := 1000 * time.Millisecond
+				if cfg.TTS.SafetyDelayMS > 0 {
+					delay = time.Duration(cfg.TTS.SafetyDelayMS) * time.Millisecond
+				}
+				
+				if gf.debug {
+					fmt.Fprintf(errOut, "[zop] debug: starting voice safety delay (%v)\n", delay)
+				}
+				
+				time.Sleep(delay)
 			}
 			voicePrompt, rerr := readVoicePrompt()
 			if rerr != nil {

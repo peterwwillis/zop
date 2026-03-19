@@ -55,6 +55,7 @@ The `Controller` is the central orchestrator used by both the CLI and Mobile UI.
 - **Context Overflows**: The CLI implements a `rolloverSession` logic. If implementing new interaction patterns, ensure context limit errors are handled.
 
 ## Convention & Style
+- **Build & Test Requirement**: You MUST always execute `make build` and `make test` (or the relevant sub-targets) before declaring any task complete or successful. Never assume code is correct without empirical verification.
 - **Surgical Edits**: Prefer small, targeted changes over large refactors.
 - **Idiomatic Go**: Follow standard Go formatting and error handling (`fmt.Errorf("context: %w", err)`).
 - **No Side Effects**: Avoid package-level state; prefer passing dependencies through constructors.
