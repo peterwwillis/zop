@@ -34,9 +34,28 @@ model    = "gemini-pro"
 provider = "openrouter"
 model    = "openrouter-default"
 
+[agents.summarizer]
+provider = "openai"
+model    = "gpt4o"
+prompt_template = "summarizer"
+
 [agents.ollama]
 provider = "ollama"
 model    = "llama3"
+
+# ─────────────────────────────────────────────
+# Templates – reusable Go templates for system/user prompts
+# Data available: .Input, .Config, .Agent, .Model, .Env
+# Functions available: now, date, time, upper, lower, trim, indent
+# ─────────────────────────────────────────────
+
+[templates.expert]
+system_prompt = "You are an expert in your field. The current date is {{date}}."
+prompt = "Please explain the following in great detail: {{.Input}}"
+
+[templates.summarizer]
+system_prompt = "You are a helpful assistant that summarizes text concisely."
+prompt = "Summarize the following text:\n\n{{.Input}}"
 
 # ─────────────────────────────────────────────
 # Providers
@@ -124,9 +143,14 @@ top_p       = 0.95
 
 // AgentConfig defines a named agent that pairs a provider with a model.
 type AgentConfig struct {
-	Provider     string `toml:"provider"`
-	Model        string `toml:"model"`
-	SystemPrompt string `toml:"system_prompt"`
+	Provider             string `toml:"provider"`
+	Model                string `toml:"model"`
+	SystemPrompt         string `toml:"system_prompt"`
+	SystemPromptFile     string `toml:"system_prompt_file"`
+	SystemPromptTemplate string `toml:"system_prompt_template"`
+	Prompt               string `toml:"prompt"`
+	PromptFile           string `toml:"prompt_file"`
+	PromptTemplate       string `toml:"prompt_template"`
 }
 
 // ProviderConfig holds connection settings for an AI provider.
@@ -149,7 +173,17 @@ type ModelConfig struct {
 	// RepeatPenalty / frequency_penalty (OpenAI) / repetition_penalty.
 	RepeatPenalty float32 `toml:"repeat_penalty"`
 	// SystemPrompt defines a model-specific system prompt.
-	SystemPrompt string `toml:"system_prompt"`
+	SystemPrompt         string `toml:"system_prompt"`
+	SystemPromptFile     string `toml:"system_prompt_file"`
+	SystemPromptTemplate string `toml:"system_prompt_template"`
+}
+
+// TemplateConfig defines a reusable prompt template.
+type TemplateConfig struct {
+	SystemPrompt     string `toml:"system_prompt"`
+	SystemPromptFile string `toml:"system_prompt_file"`
+	Prompt           string `toml:"prompt"`
+	PromptFile       string `toml:"prompt_file"`
 }
 
 // Config is the top-level configuration structure.
@@ -157,6 +191,7 @@ type Config struct {
 	Agents    map[string]AgentConfig    `toml:"agents"`
 	Providers map[string]ProviderConfig `toml:"providers"`
 	Models    map[string]ModelConfig    `toml:"models"`
+	Templates map[string]TemplateConfig `toml:"templates"`
 }
 
 // RawConfig is the untyped config structure used for editing config files.
@@ -287,6 +322,7 @@ func LoadRaw(path string) (RawConfig, error) {
 	ensureSection(raw, "agents")
 	ensureSection(raw, "providers")
 	ensureSection(raw, "models")
+	ensureSection(raw, "templates")
 
 	return raw, nil
 }

@@ -21,9 +21,28 @@ model    = "gemini-pro"
 provider = "openrouter"
 model    = "openrouter-default"
 
+[agents.summarizer]
+provider = "openai"
+model    = "gpt4o"
+prompt_template = "summarizer"
+
 [agents.ollama]
 provider = "ollama"
 model    = "llama3"
+
+# ─────────────────────────────────────────────
+# Templates – reusable Go templates for system/user prompts
+# Data available: .Input, .Config, .Agent, .Model, .Env
+# Functions available: now, date, time, upper, lower, trim, indent
+# ─────────────────────────────────────────────
+
+[templates.expert]
+system_prompt = "You are an expert in your field. The current date is {{date}}."
+prompt = "Please explain the following in great detail: {{.Input}}"
+
+[templates.summarizer]
+system_prompt = "You are a helpful assistant that summarizes text concisely."
+prompt = "Summarize the following text:\n\n{{.Input}}"
 
 # ─────────────────────────────────────────────
 # Providers
