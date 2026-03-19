@@ -80,9 +80,9 @@ func (p *audioPlayer) Wait() {
 		time.Sleep(50 * time.Millisecond)
 	}
 	
-	// Final drain delay to ensure the last buffer actually finished playing
-	// and any hardware/OS buffers are empty.
-	time.Sleep(1000 * time.Millisecond)
+	// Small drain delay to ensure the last buffer finishes.
+	// The CLI handles the longer safety delay.
+	time.Sleep(100 * time.Millisecond)
 }
 
 func (p *audioPlayer) onAudio(pOutput, pInput []byte, frameCount uint32) {

@@ -107,3 +107,13 @@ model_id    = "mistral"
 max_tokens  = 4096
 temperature = 0.8
 top_p       = 0.95
+
+# ─────────────────────────────────────────────
+# Voice Output (TTS)
+# ─────────────────────────────────────────────
+[tts]
+# model_url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2"
+# model_name = "vits-piper-en_US-amy-low"
+# piper_model = "en_US-amy-low.onnx"
+speed = 1.0
+safety_delay_ms = 1000

@@ -82,6 +82,11 @@ The prompt can be supplied as:
 	root.Flags().BoolP("voice", "V", false, "record prompt from microphone (requires whisper-enabled build)")
 	root.Flags().Bool("voice-manual", false, "disable silence auto-stop in voice mode; press Ctrl-D when ready")
 	root.Flags().BoolP("tts", "T", false, "output response to voice (requires tts-enabled build)")
+	root.Flags().Float32("tts-speed", 0, "TTS speech speed (e.g. 1.2)")
+	root.Flags().Int("tts-delay", 0, "TTS safety delay in milliseconds")
+	root.Flags().String("tts-model", "", "TTS model name (e.g. vits-piper-en_US-amy-low)")
+	root.Flags().String("wake-word", "", "word or phrase to wake up and listen")
+	root.Flags().String("stop-word", "", "word or phrase to stop listening")
 
 	// Subcommands
 	root.AddCommand(newChatCmd(gf))
@@ -141,8 +146,23 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	voice, _ := cmd.Flags().GetBool("voice")
 	voiceManual, _ := cmd.Flags().GetBool("voice-manual")
 	voiceOut, _ := cmd.Flags().GetBool("tts")
+	ttsSpeed, _ := cmd.Flags().GetFloat32("tts-speed")
+	ttsDelay, _ := cmd.Flags().GetInt("tts-delay")
+	ttsModel, _ := cmd.Flags().GetString("tts-model")
+	wakeWord, _ := cmd.Flags().GetString("wake-word")
+	stopWord, _ := cmd.Flags().GetString("stop-word")
 	promptFlag, _ := cmd.Flags().GetString("prompt")
 	interactive, _ := cmd.Flags().GetBool("interactive")
+
+	if cmd.Flags().Changed("tts-delay") {
+		cfg.TTS.SafetyDelayMS = ttsDelay
+	}
+	if ttsSpeed > 0 {
+		cfg.TTS.Speed = ttsSpeed
+	}
+	if ttsModel != "" {
+		cfg.TTS.ModelName = ttsModel
+	}
 
 	var speaker tts.Speaker
 	if voiceOut {
@@ -392,27 +412,59 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	}
 
 	if voice {
+		isAwake := wakeWord == "" // If no wake word, always awake
 		for {
 			if speaker != nil {
 				_ = speaker.Wait()
-				
-				delay := 1000 * time.Millisecond
-				if cfg.TTS.SafetyDelayMS > 0 {
-					delay = time.Duration(cfg.TTS.SafetyDelayMS) * time.Millisecond
-				}
-				
-				if gf.debug {
-					fmt.Fprintf(errOut, "[zop] debug: starting voice safety delay (%v)\n", delay)
-				}
-				
+			}
+
+			// Apply configured safety delay
+			if cfg.TTS.SafetyDelayMS > 0 {
+				delay := time.Duration(cfg.TTS.SafetyDelayMS) * time.Millisecond
+				fmt.Fprintf(errOut, "[zop] starting voice safety delay (%v)\n", delay)
 				time.Sleep(delay)
 			}
+
 			voicePrompt, rerr := readVoicePrompt()
 			if rerr != nil {
 				return fmt.Errorf("voice input: %w", rerr)
 			}
-			if err := sendPrompt(voicePrompt); err != nil {
-				return err
+
+			// Clean up transcription noise
+			cleanPrompt := strings.ToLower(voicePrompt)
+			if strings.Contains(cleanPrompt, "[blank_audio]") || strings.Contains(cleanPrompt, "[inaudible]") {
+				continue
+			}
+
+			if wakeWord != "" || stopWord != "" {
+				lowerPrompt := strings.ToLower(voicePrompt)
+				
+				if stopWord != "" && strings.Contains(lowerPrompt, strings.ToLower(stopWord)) {
+					fmt.Fprintf(errOut, "[zop] stop word detected: %s (sleeping)\n", stopWord)
+					isAwake = false
+					continue
+				}
+				
+				if wakeWord != "" && strings.Contains(lowerPrompt, strings.ToLower(wakeWord)) {
+					fmt.Fprintf(errOut, "[zop] wake word detected: %s (awake)\n", wakeWord)
+					isAwake = true
+					// Remove wake word from prompt if it's the start
+					voicePrompt = strings.TrimSpace(strings.Replace(lowerPrompt, strings.ToLower(wakeWord), "", 1))
+					if voicePrompt == "" {
+						fmt.Fprintf(errOut, "[zop] listening...\n")
+						continue
+					}
+				}
+			}
+
+			if isAwake {
+				if err := sendPrompt(voicePrompt); err != nil {
+					return err
+				}
+			} else {
+				if gf.debug {
+					fmt.Fprintf(errOut, "[zop] debug: ignoring prompt (sleeping): %q\n", voicePrompt)
+				}
 			}
 		}
 	}
