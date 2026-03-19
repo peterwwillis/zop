@@ -92,7 +92,10 @@ func NewWindow(app fyne.App, controller *zopapp.Controller) fyne.Window {
 					}
 					// Auto-speak if enabled
 					if voiceOutToggle.Checked {
-						go controller.Speak(context.Background(), resp)
+						go func() {
+							_ = controller.WaitSpeaker()
+							_ = controller.Speak(context.Background(), resp)
+						}()
 					}
 				}
 				buffer.AppendDirect("\n\n")

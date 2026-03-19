@@ -1,8 +1,6 @@
 package tts
 
 import (
-	"fmt"
-	"os"
 	"sync"
 	"time"
 	"unsafe"
@@ -27,21 +25,11 @@ func newAudioPlayer(sampleRate int) (*audioPlayer, error) {
 		mctx: mctx,
 	}
 
-	// Log active backend
-	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		// Attempt to get backend name via a small hack or just list
-		fmt.Fprintf(os.Stderr, "[zop] tts: malgo context initialized\n")
-	}
-
 	cfg := malgo.DefaultDeviceConfig(malgo.Playback)
 	cfg.Playback.Format = malgo.FormatF32
 	cfg.Playback.Channels = 1
 	cfg.SampleRate = uint32(sampleRate)
 	cfg.Alsa.NoMMap = 1
-
-	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		fmt.Fprintf(os.Stderr, "[zop] tts: opening playback device at %d Hz\n", sampleRate)
-	}
 
 	device, err := malgo.InitDevice(mctx.Context, cfg, malgo.DeviceCallbacks{
 		Data: func(pOutput, pInput []byte, frameCount uint32) {
@@ -63,25 +51,21 @@ func newAudioPlayer(sampleRate int) (*audioPlayer, error) {
 	}
 
 	// Give it a moment to start up
-	time.Sleep(100 * time.Millisecond)
-
-	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		fmt.Fprintf(os.Stderr, "[zop] tts: device started\n")
-	}
+	time.Sleep(50 * time.Millisecond)
 
 	return p, nil
 }
 
 func (p *audioPlayer) Play(samples []float32) {
-	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		fmt.Fprintf(os.Stderr, "[zop] tts: queuing %d samples\n", len(samples))
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.queue = append(p.queue, samples)
 }
 
 func (p *audioPlayer) Wait() {
+	// Wait a tiny bit to ensure callbacks have a chance to start
+	time.Sleep(50 * time.Millisecond)
+
 	start := time.Now()
 	for {
 		p.mu.Lock()
@@ -90,14 +74,14 @@ func (p *audioPlayer) Wait() {
 		if empty {
 			break
 		}
-		if time.Since(start) > 10*time.Second {
-			if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-				fmt.Fprintf(os.Stderr, "[zop] tts: wait timeout reached, still have %d chunks in queue\n", len(p.queue))
-			}
+		if time.Since(start) > 15*time.Second {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
+	
+	// Final drain delay to ensure the last buffer actually finished playing
+	time.Sleep(200 * time.Millisecond)
 }
 
 func (p *audioPlayer) onAudio(pOutput, pInput []byte, frameCount uint32) {

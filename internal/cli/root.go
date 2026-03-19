@@ -369,7 +369,6 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 				if err := speaker.Speak(context.Background(), resp.Content); err != nil {
 					fmt.Fprintf(errOut, "[zop] warning: could not output voice: %v\n", err)
 				}
-				_ = speaker.Wait()
 			}
 			messages = append(reqMessages, provider.Message{Role: "assistant", Content: resp.Content})
 			if chatName != "" && sessionMgr != nil {
