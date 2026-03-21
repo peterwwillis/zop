@@ -287,7 +287,7 @@ func (c *Controller) reloadProviderLocked() error {
 	c.toolRegistry = tool.NewRegistry()
 	c.toolRegistry.Register(&tool.RunCommandTool{})
 	for name, mcpCfg := range c.cfg.MCPServers {
-		mcpClient, err := mcp.NewClient(context.Background(), mcpCfg.Command, mcpCfg.Args...)
+		mcpClient, err := mcp.NewClient(context.Background(), mcpCfg.URL, mcpCfg.Command, mcpCfg.Args...)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to connect to MCP server %q: %v\n", name, err)
 			continue

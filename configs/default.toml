@@ -65,6 +65,9 @@ base_url = "http://localhost:11434/v1"
 # command = "npx"
 # args = ["-y", "@modelcontextprotocol/server-memory"]
 
+# [mcp_servers.remote]
+# url = "http://localhost:8080/mcp/sse"
+
 # ─────────────────────────────────────────────
 # Models
 # ─────────────────────────────────────────────

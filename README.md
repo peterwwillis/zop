@@ -10,10 +10,13 @@ voice input via Whisper in whisper-enabled builds.
 ## Features
 
 - **Multiple providers**: OpenAI, Anthropic (Claude), Google (Gemini), OpenRouter, Ollama
-- **TOML config**: Define multiple named *agents*, *providers*, and *models* in `~/.config/zop/config.toml`
+- **TOML config**: Define multiple named *agents*, *providers*, *models*, and *MCP servers* in `~/.config/zop/config.toml`
+- **Tool Calling**: Models can execute tools, including a built-in `run_command` tool
+- **Model Context Protocol (MCP)**: Connect to external tools via MCP servers
 - **Chat sessions**: Persistent multi-turn conversations stored locally
 - **Streaming**: Real-time token streaming via `--stream`
 - **Voice input** *(whisper-enabled builds)*: `--voice` flag for microphone input via Whisper
+- **Voice transcription**: Transcription output shown during voice input (with `--verbose`)
 
 ## Installation
 
@@ -111,6 +114,11 @@ api_key_env = "OPENAI_API_KEY"
 [providers.ollama]
 base_url = "http://localhost:11434/v1"  # no API key required
 
+# MCP Servers (optional)
+[mcp_servers.sqlite]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sqlite", "--db", "zop.db"]
+
 # Model hyperparameters
 [models.gpt4o]
 model_id    = "gpt-4o"
@@ -142,6 +150,33 @@ zop chat list              # list all sessions
 zop chat show my-chat      # show messages in a session
 zop chat delete my-chat    # delete a session
 ```
+
+## Tool Calling & MCP
+
+`zop` supports tool calling, allowing models to interact with the external world.
+
+### Built-in Tools
+- **`run_command`**: Execute a shell command. The model can request to run commands to perform tasks or gather information. *Note: Commands are executed automatically by the CLI.*
+
+### Model Context Protocol (MCP)
+`zop` supports the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) for connecting to external tool servers.
+
+To use MCP, add `mcp_servers` to your `config.toml`:
+
+```toml
+[mcp_servers.sqlite]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sqlite", "--db", "zop.db"]
+
+[mcp_servers.everything]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-everything"]
+
+[mcp_servers.remote]
+url = "http://localhost:8080/mcp/sse"
+```
+
+Tools provided by these servers will be automatically registered and made available to models that support tool calling (OpenAI, Anthropic, Google Gemini) in both the CLI and Mobile UI.
 
 ## Building from Source
 

@@ -62,9 +62,12 @@ system_prompt = "You are a test model."
 
 func TestLoadMCPConfig(t *testing.T) {
 	content := `
-[mcp_servers.test-mcp]
+[mcp_servers.test-stdio]
 command = "echo"
 args = ["hello"]
+
+[mcp_servers.test-sse]
+url = "http://localhost:8080/sse"
 `
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
@@ -73,9 +76,12 @@ args = ["hello"]
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
 
-	assert.Contains(t, cfg.MCPServers, "test-mcp")
-	assert.Equal(t, "echo", cfg.MCPServers["test-mcp"].Command)
-	assert.Equal(t, []string{"hello"}, cfg.MCPServers["test-mcp"].Args)
+	assert.Contains(t, cfg.MCPServers, "test-stdio")
+	assert.Equal(t, "echo", cfg.MCPServers["test-stdio"].Command)
+	assert.Equal(t, []string{"hello"}, cfg.MCPServers["test-stdio"].Args)
+
+	assert.Contains(t, cfg.MCPServers, "test-sse")
+	assert.Equal(t, "http://localhost:8080/sse", cfg.MCPServers["test-sse"].URL)
 }
 
 func TestGetAgentNotFound(t *testing.T) {

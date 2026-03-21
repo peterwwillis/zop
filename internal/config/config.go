@@ -162,6 +162,7 @@ type Config struct {
 
 // MCPServerConfig defines an MCP server connection.
 type MCPServerConfig struct {
+	URL     string   `toml:"url"`
 	Command string   `toml:"command"`
 	Args    []string `toml:"args"`
 }

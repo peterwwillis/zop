@@ -14,16 +14,30 @@ import (
 
 // Client is a wrapper around an MCP client.
 type Client struct {
-	mcpClient *client.Client
-	serverCmd string
-	serverArgs []string
+	mcpClient  *client.Client
+	serverInfo string
 }
 
-// NewClient creates a new MCP client that connects via stdio.
-func NewClient(ctx context.Context, command string, args ...string) (*Client, error) {
-	c, err := client.NewStdioMCPClient(command, os.Environ(), args...)
-	if err != nil {
-		return nil, fmt.Errorf("creating mcp client: %w", err)
+// NewClient creates a new MCP client that connects via stdio or SSE.
+func NewClient(ctx context.Context, url string, command string, args ...string) (*Client, error) {
+	var c *client.Client
+	var err error
+	var info string
+
+	if url != "" {
+		c, err = client.NewSSEMCPClient(url)
+		if err != nil {
+			return nil, fmt.Errorf("creating sse mcp client: %w", err)
+		}
+		info = url
+	} else if command != "" {
+		c, err = client.NewStdioMCPClient(command, os.Environ(), args...)
+		if err != nil {
+			return nil, fmt.Errorf("creating stdio mcp client: %w", err)
+		}
+		info = fmt.Sprintf("%s %v", command, args)
+	} else {
+		return nil, fmt.Errorf("either url or command must be provided for MCP client")
 	}
 
 	if err := c.Start(ctx); err != nil {
@@ -46,9 +60,8 @@ func NewClient(ctx context.Context, command string, args ...string) (*Client, er
 	}
 
 	return &Client{
-		mcpClient: c,
-		serverCmd: command,
-		serverArgs: args,
+		mcpClient:  c,
+		serverInfo: info,
 	}, nil
 }
 

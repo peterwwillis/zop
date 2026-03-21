@@ -122,7 +122,7 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	registry := tool.NewRegistry()
 	registry.Register(&tool.RunCommandTool{})
 	for name, mcpCfg := range cfg.MCPServers {
-		mcpClient, err := mcp.NewClient(context.Background(), mcpCfg.Command, mcpCfg.Args...)
+		mcpClient, err := mcp.NewClient(context.Background(), mcpCfg.URL, mcpCfg.Command, mcpCfg.Args...)
 		if err != nil {
 			if gf.verbose {
 				fmt.Fprintf(cmd.ErrOrStderr(), "[zop] warning: failed to connect to MCP server %q: %v\n", name, err)
