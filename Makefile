@@ -92,11 +92,11 @@ _tts_dep     = $(if $(filter tts,$(BUILD_TAGS)),tts-fetch,)
 # Phony targets
 # ==============================================================
 
-.PHONY: all deps vet build test \
+.PHONY: all deps vet build clean test \
         whisper-fetch whisper-clean \
         tts-fetch tts-clean \
         vet-whisper build-whisper test-whisper \
-        build-bin android-apk screenshot \
+        build-bin build-bin-clean android-apk screenshot \
         setup-go setup-go-clean go-env
 
 all: build
@@ -104,6 +104,8 @@ all: build
 # ==============================================================
 # Standard Go targets
 # ==============================================================
+
+clean: whisper-clean tts-clean setup-go-clean build-bin-clean
 
 ## deps: Download Go module dependencies
 deps:
@@ -220,7 +222,7 @@ build-bin:
 
 ## build-static: Build a fully static CLI binary (Linux only, requires static system libs).
 build-static: $(_whisper_dep) $(_tts_dep)
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+	CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH) \
 	go build \
 		$(_tag_args) \
 		-ldflags='-s -w -extldflags "-static" -X github.com/peterwwillis/zop/internal/cli.Version=$(VERSION)' \

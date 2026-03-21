@@ -95,75 +95,108 @@ jobs:
       - name: Fetch whisper.cpp
         run: make whisper-fetch
 
+      - name: Fetch sherpa-onnx
+        run: make tts-fetch
+
       - name: Vet
-        run: make vet-whisper
+        run: make vet BUILD_TAGS="whisper tts"
 
       - name: Test
-        run: make test-whisper
+        run: make test BUILD_TAGS="whisper tts"
 
   build:
-    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }}${{ matrix.suffix }})
     needs: [resolve-tag, test]
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
-          # Linux (whisper-enabled default + no-whisper variant)
+          # Linux amd64
+          - goos: linux
+            goarch: amd64
+            cgo: "1"
+            tags: "whisper tts"
+            suffix: ""
+            whisper: true
+            tts: true
+            static: true
+            runner: ubuntu-latest
           - goos: linux
             goarch: amd64
             cgo: "1"
             tags: "whisper"
-            suffix: ""
+            suffix: "-whisperonly"
             whisper: true
+            tts: false
+            static: true
             runner: ubuntu-latest
           - goos: linux
             goarch: amd64
             cgo: "0"
             tags: ""
-            suffix: "-nowhisper"
+            suffix: "-novoice"
             whisper: false
+            tts: false
+            static: false
             runner: ubuntu-latest
+
+          # Linux arm64
+          - goos: linux
+            goarch: arm64
+            cgo: "1"
+            tags: "whisper tts"
+            suffix: ""
+            whisper: true
+            tts: true
+            static: true
+            runner: ubuntu-24.04-arm
           - goos: linux
             goarch: arm64
             cgo: "1"
             tags: "whisper"
-            suffix: ""
+            suffix: "-whisperonly"
             whisper: true
+            tts: false
+            static: true
             runner: ubuntu-24.04-arm
           - goos: linux
             goarch: arm64
             cgo: "0"
             tags: ""
-            suffix: "-nowhisper"
+            suffix: "-novoice"
             whisper: false
+            tts: false
+            static: false
             runner: ubuntu-24.04-arm
+
+          # Darwin arm64
+          - goos: darwin
+            goarch: arm64
+            cgo: "1"
+            tags: "whisper tts"
+            suffix: ""
+            whisper: true
+            tts: true
+            static: false
+            runner: [ self-hosted, macOS, ARM64 ]
           - goos: darwin
             goarch: arm64
             cgo: "1"
             tags: "whisper"
-            suffix: ""
+            suffix: "-whisperonly"
             whisper: true
+            tts: false
+            static: false
             runner: [ self-hosted, macOS, ARM64 ]
           - goos: darwin
             goarch: arm64
             cgo: "0"
             tags: ""
-            suffix: "-nowhisper"
+            suffix: "-novoice"
             whisper: false
+            tts: false
+            static: false
             runner: [ self-hosted, macOS, ARM64 ]
-          # Windows (no-whisper only for now)
-          #- goos: windows
-          #  goarch: amd64
-          #  cgo: "0"
-          #  tags: ""
-          #  suffix: "-nowhisper"
-          #  whisper: false
-          #- goos: windows
-          #  goarch: arm64
-          #  cgo: "0"
-          #  tags: ""
-          #  suffix: "-nowhisper"
-          #  whisper: false
 
     steps:
       - uses: actions/checkout@v4
@@ -199,6 +232,10 @@ jobs:
         if: ${{ matrix.whisper }}
         run: make whisper-fetch
 
+      - name: Fetch sherpa-onnx
+        if: ${{ matrix.tts }}
+        run: make tts-fetch
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -206,7 +243,12 @@ jobs:
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: ${{ matrix.cgo }}
         run: |
-          make build-bin \
+          TARGET="build-bin"
+          if [ "${{ matrix.static }}" = "true" ]; then
+            TARGET="build-static"
+          fi
+          
+          make $TARGET \
             GOOS="${{ matrix.goos }}" \
             GOARCH="${{ matrix.goarch }}" \
             GOARM="${{ matrix.goarm }}" \
@@ -214,12 +256,19 @@ jobs:
             BUILD_TAGS="${{ matrix.tags }}" \
             VERSION="${{ needs.resolve-tag.outputs.tag }}" \
             BINARY="${{ steps.binary.outputs.name }}"
+          
+          # If it was a static build, it created BINARY-static. 
+          # Move it to BINARY to match expected release name.
+          if [ "${{ matrix.static }}" = "true" ]; then
+            mv "${{ steps.binary.outputs.name }}-static" "${{ steps.binary.outputs.name }}"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.binary.outputs.name }}
           path: ${{ steps.binary.outputs.name }}
+          if-no-files-found: error
           retention-days: 1
 
   android:
