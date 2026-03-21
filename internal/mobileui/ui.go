@@ -66,6 +66,15 @@ func NewWindow(app fyne.App, controller *zopapp.Controller) fyne.Window {
 		buffer.AppendDirect(fmt.Sprintf("[zop] %s\n\n", warning))
 	}
 
+	voiceOutToggle := widget.NewCheck("TTS", func(b bool) {
+		if b {
+			// Try to initialize speaker if not already
+			if err := controller.ReloadConfig(); err != nil {
+				dialog.NewError(err, window).Show()
+			}
+		}
+	})
+
 	sendPrompt := func(prompt string) {
 		prompt = strings.TrimSpace(prompt)
 		if prompt == "" {
@@ -107,15 +116,6 @@ func NewWindow(app fyne.App, controller *zopapp.Controller) fyne.Window {
 	}
 
 	promptEntry.OnSubmitted = sendPrompt
-
-	voiceOutToggle := widget.NewCheck("TTS", func(b bool) {
-		if b {
-			// Try to initialize speaker if not already
-			if err := controller.ReloadConfig(); err != nil {
-				dialog.NewError(err, window).Show()
-			}
-		}
-	})
 
 	configButton := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
 		showConfigWindow(app, window, controller, buffer, updateTitle)
