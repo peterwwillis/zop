@@ -33,10 +33,12 @@ const (
 )
 
 type cgoSpeaker struct {
-	tts    *C.SherpaOnnxOfflineTts
-	player *audioPlayer
-	speed  float32
-	mu     sync.Mutex
+	tts              *C.SherpaOnnxOfflineTts
+	player           *audioPlayer
+	speed            float32
+	sanitizeMarkdown bool
+	chunkSize        int
+	mu               sync.Mutex
 }
 
 func newSpeaker(cfg config.TTSConfig) (Speaker, error) {
@@ -79,7 +81,11 @@ func newSpeaker(cfg config.TTSConfig) (Speaker, error) {
 	cConfig.model.num_threads = 1
 	cConfig.model.debug = 0
 	
-	cProvider := C.CString("cpu")
+	provider := "cpu"
+	if cfg.Provider != "" {
+		provider = cfg.Provider
+	}
+	cProvider := C.CString(provider)
 	defer C.free(unsafe.Pointer(cProvider))
 	cConfig.model.provider = cProvider
 
@@ -94,8 +100,10 @@ func newSpeaker(cfg config.TTSConfig) (Speaker, error) {
 	}
 
 	return &cgoSpeaker{
-		tts:   tts,
-		speed: speed,
+		tts:              tts,
+		speed:            speed,
+		sanitizeMarkdown: cfg.SanitizeMarkdown,
+		chunkSize:        cfg.ChunkSize,
 	}, nil
 }
 
@@ -114,12 +122,41 @@ func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
 
 	s.mu.Lock()
 	speed := s.speed
+	doSanitize := s.sanitizeMarkdown
+	chunkSize := s.chunkSize
 	s.mu.Unlock()
 
-	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		fmt.Fprintf(os.Stderr, "[zop] tts: generating audio for %d chars at speed %.2f...\n", len(text), speed)
+	if doSanitize {
+		text = sanitizeMarkdown(text)
 	}
 
+	chunks := splitIntoChunks(text, chunkSize)
+
+	for _, chunk := range chunks {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if chunk == "" {
+			continue
+		}
+
+		if os.Getenv("ZOP_DEBUG_TTS") == "1" {
+			fmt.Fprintf(os.Stderr, "[zop] tts: generating audio for chunk (%d chars) at speed %.2f...\n", len(chunk), speed)
+		}
+
+		err := s.speakChunk(chunk, speed)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *cgoSpeaker) speakChunk(text string, speed float32) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -137,10 +174,6 @@ func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
 		return nil
 	}
 
-	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
-		fmt.Fprintf(os.Stderr, "[zop] tts: generated %d samples at %d Hz\n", n, int(audio.sample_rate))
-	}
-
 	// Convert C float array to Go slice
 	samples := (*[1 << 30]float32)(unsafe.Pointer(audio.samples))[:n:n]
 	
@@ -148,8 +181,13 @@ func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
 	goSamples := make([]float32, n)
 	copy(goSamples, samples)
 
-	// Lazily initialize or replace audio player if sample rate changed
 	sampleRate := int(audio.sample_rate)
+
+	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
+		fmt.Fprintf(os.Stderr, "[zop] tts: generated %d samples, sample rate: %d\n", n, sampleRate)
+	}
+
+	// Lazily initialize or replace audio player if sample rate changed
 	if s.player == nil || s.player.sampleRate != sampleRate {
 		if s.player != nil {
 			s.player.Close()
