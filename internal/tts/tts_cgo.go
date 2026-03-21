@@ -195,9 +195,12 @@ func defaultModelPath() string {
 	if p := os.Getenv("ZOP_TTS_MODEL"); p != "" {
 		return p
 	}
+	if configDir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(configDir, "zop", "tts")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return filepath.Join(".", "zop-tts")
+		return "zop-tts"
 	}
 	return filepath.Join(home, ".local", "share", "zop", "tts")
 }

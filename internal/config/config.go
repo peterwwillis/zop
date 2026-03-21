@@ -251,6 +251,12 @@ func DefaultConfigPath() string {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "zop", "config.toml")
 	}
+
+	// Try UserConfigDir first as it's more standard on modern systems.
+	if configDir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(configDir, "zop", "config.toml")
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "config.toml"

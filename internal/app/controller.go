@@ -48,6 +48,20 @@ func NewController(configPath, sessionName, agentName string) (*Controller, erro
 		sessionName = defaultSessionName
 	}
 
+	// For portability (e.g. on Android), set model paths relative to config directory
+	// if they are not already overridden by environment variables.
+	if configPath != "" {
+		baseDir := filepath.Dir(configPath)
+		if _, ok := os.LookupEnv("ZOP_WHISPER_MODEL"); !ok {
+			whisperPath := filepath.Join(baseDir, "whisper", defaultWhisperModelFilename)
+			_ = os.Setenv("ZOP_WHISPER_MODEL", whisperPath)
+		}
+		if _, ok := os.LookupEnv("ZOP_TTS_MODEL"); !ok {
+			ttsPath := filepath.Join(baseDir, "tts")
+			_ = os.Setenv("ZOP_TTS_MODEL", ttsPath)
+		}
+	}
+
 	if err := ensureWhisperModelPath(); err != nil {
 		return nil, err
 	}
@@ -77,7 +91,15 @@ func NewController(configPath, sessionName, agentName string) (*Controller, erro
 	// Register built-in tools
 	ctrl.toolRegistry.Register(&tool.RunCommandTool{})
 
-	sessionMgr, err := chat.NewManager("")
+	// Derive session directory from config directory if we have a path.
+	// This ensures portability (e.g. on Android) where we want everything
+	// in the app's assigned storage.
+	sessionDir := ""
+	if configPath != "" {
+		sessionDir = filepath.Join(filepath.Dir(configPath), "sessions")
+	}
+
+	sessionMgr, err := chat.NewManager(sessionDir)
 	if err != nil {
 		return nil, err
 	}
@@ -463,9 +485,13 @@ func ensureWhisperModelPath() error {
 	if _, ok := os.LookupEnv("ZOP_WHISPER_MODEL"); ok {
 		return nil
 	}
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return fmt.Errorf("resolving config dir: %w", err)
+	var configDir string
+	if d, err := os.UserConfigDir(); err == nil {
+		configDir = d
+	} else if h, err := os.UserHomeDir(); err == nil {
+		configDir = filepath.Join(h, ".config")
+	} else {
+		configDir = "."
 	}
 	modelPath := filepath.Join(configDir, "zop", "whisper", defaultWhisperModelFilename)
 	return os.Setenv("ZOP_WHISPER_MODEL", modelPath)

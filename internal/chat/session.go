@@ -31,14 +31,16 @@ type Manager struct {
 // If dir is empty, the OS cache directory is used.
 func NewManager(dir string) (*Manager, error) {
 	if dir == "" {
-		cache, err := os.UserCacheDir()
-		if err != nil {
-			return nil, fmt.Errorf("resolving cache dir: %w", err)
+		if cache, err := os.UserCacheDir(); err == nil {
+			dir = filepath.Join(cache, "zop", "sessions")
+		} else if home, err := os.UserHomeDir(); err == nil {
+			dir = filepath.Join(home, ".cache", "zop", "sessions")
+		} else {
+			dir = "sessions"
 		}
-		dir = filepath.Join(cache, "zop", "sessions")
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, fmt.Errorf("creating session dir: %w", err)
+		return nil, fmt.Errorf("creating session dir %q: %w", dir, err)
 	}
 	return &Manager{dir: dir}, nil
 }

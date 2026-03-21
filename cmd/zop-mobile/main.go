@@ -3,6 +3,8 @@
 package main
 
 import (
+	"path/filepath"
+
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/dialog"
@@ -14,7 +16,15 @@ import (
 
 func main() {
 	application := fyneapp.NewWithID("com.zop.app")
-	controller, err := zopapp.NewController("", "", "")
+
+	// On Android, use the app's internal storage for config and sessions.
+	// Fyne's Storage().RootURI() usually points to the app's files directory.
+	var configPath string
+	if root := application.Storage().RootURI(); root != nil {
+		configPath = filepath.Join(root.Path(), "config.toml")
+	}
+
+	controller, err := zopapp.NewController(configPath, "", "")
 	if err != nil {
 		window := application.NewWindow("zop")
 		dialog.NewError(err, window).Show()
