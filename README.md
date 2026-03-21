@@ -14,6 +14,8 @@ voice input via Whisper in whisper-enabled builds.
 - **Chat sessions**: Persistent multi-turn conversations stored locally
 - **Streaming**: Real-time token streaming via `--stream`
 - **Voice input** *(whisper-enabled builds)*: `--voice` flag for microphone input via Whisper
+- **Voice output** *(tts-enabled builds)*: `--tts` flag for offline speech output via Piper/Sherpa-ONNX
+- **Wake Word mode**: Hands-free interactive mode using `--wake-word` and `--stop-word`
 
 ## Installation
 
@@ -59,6 +61,18 @@ zop --voice --debug
 
 # Voice input with manual send (disable silence auto-stop)
 zop --voice --voice-manual
+
+# Voice output (tts-enabled build)
+zop --tts "Hello world"
+
+# Interactive mode with both voice input and output
+zop -iV --tts
+
+# Customize TTS speed and turn safety delay
+zop -iV --tts --tts-speed 1.2 --tts-delay 2000
+
+# Wake Word mode (starts in "sleeping" state)
+zop -iV --tts --wake-word "hey zop" --stop-word "goodbye"
 ```
 
 Whisper's native initialization logs are suppressed by default and are shown
@@ -118,6 +132,11 @@ max_tokens  = 4096
 temperature = 1.0
 top_p       = 1.0
 system_prompt = "You are a helpful assistant."
+
+# TTS settings
+[tts]
+speed = 1.0
+safety_delay_ms = 1000
 ```
 
 See [`configs/default.toml`](configs/default.toml) for the full set of built-in agents,
@@ -173,12 +192,12 @@ make setup-go GO_INSTALL_DIR=/opt/go/1.24.0
 
 ### 2 — Build
 
-The default build includes **Whisper voice support** (fetches and compiles
-`whisper.cpp` automatically):
+The default build includes **Voice support** (fetches and compiles
+`whisper.cpp` and `sherpa-onnx` automatically):
 
 ```sh
 make deps    # download Go module dependencies
-make build   # build all packages with -tags whisper
+make build   # build all packages with -tags "whisper tts"
 
 ```
 
@@ -188,7 +207,7 @@ Or run both in one shot:
 make deps build
 ```
 
-To build **without** Whisper:
+To build **without** voice support:
 
 ```sh
 make build BUILD_TAGS="" CGO_ENABLED=0
@@ -197,11 +216,11 @@ make build BUILD_TAGS="" CGO_ENABLED=0
 ### 3 — Test & Vet
 
 ```sh
-make test                                          # with whisper (default)
+make test                                          # with voice (default)
 make test TEST_ARGS="-race -coverprofile=out.cov"  # with race detector + coverage
-make vet                                           # go vet (with whisper by default)
+make vet                                           # go vet (with voice by default)
 
-make test BUILD_TAGS="" CGO_ENABLED=0              # without whisper
+make test BUILD_TAGS="" CGO_ENABLED=0              # without voice
 ```
 
 ### 4 — Release binary
@@ -219,8 +238,11 @@ works cleanly for the no-whisper variant):
 # Whisper-enabled — must run on the target platform
 make build-bin GOOS=linux GOARCH=arm64 VERSION=v1.2.3
 
-# No-whisper — cross-compilation works anywhere
-make build-bin GOOS=linux GOARCH=amd64 BUILD_TAGS="" CGO_ENABLED=0 BINARY_SUFFIX=-nowhisper VERSION=v1.2.3
+# Fully static Linux build (recommended for Linux releases)
+make build-static
+
+# No-voice — cross-compilation works anywhere
+make build-bin GOOS=linux GOARCH=amd64 BUILD_TAGS="" CGO_ENABLED=0 BINARY_SUFFIX=-novoice VERSION=v1.2.3
 ```
 
 The output binary is named `zop-<os>-<arch>[<suffix>][.exe]` by default;
@@ -243,34 +265,42 @@ Output: `zop-android-arm64.apk`
 |---|---|
 | `make setup-go` | Download & install Go from `go.mod` |
 | `make deps` | `go mod download` |
-| `make build` | Build all packages (whisper by default) |
+| `make build` | Build all packages (voice enabled by default) |
 
-| `make test` | Run tests (whisper by default) |
+| `make test` | Run tests (voice enabled by default) |
 | `make vet` | Run `go vet` |
 | `make build-bin` | Build release binary for current platform |
+| `make build-static` | Build a fully static Linux binary |
 | `make whisper-fetch` | Clone & compile `whisper.cpp` |
 | `make whisper-clean` | Remove `whisper.cpp` build tree |
+| `make tts-fetch` | Clone & compile `sherpa-onnx` |
+| `make tts-clean` | Remove `sherpa-onnx` build tree |
 | `make android-apk` | Build Android APK via `fyne-cross` |
 | `make setup-go-clean` | Remove the installed Go toolchain |
 
 All variables (`GO_VERSION`, `BUILD_TAGS`, `CGO_ENABLED`, `GOOS`, `GOARCH`,
 `VERSION`, …) can be overridden on the command line.
 
-## Building with Whisper Support
+## Building with Voice Support
 
-Whisper support is enabled by default when building with `make`. To build
-manually with raw `go`:
+Voice support (input and output) is enabled by default when building with `make`.
+To build manually with raw `go`:
 
 ```sh
 make whisper-fetch                      # clone + compile whisper.cpp
-CGO_ENABLED=1 go build -tags whisper -o zop ./cmd/zop
+make tts-fetch                          # clone + compile sherpa-onnx
+CGO_ENABLED=1 go build -tags "whisper tts" -o zop ./cmd/zop
 ```
 
-Set `ZOP_WHISPER_MODEL` to override the model path
-(default: `~/.local/share/zop/whisper/ggml-base.en.bin`).
+### Voice Models
 
-To build a smaller binary without Whisper, omit the tag, or grab
-release artifacts suffixed with `-nowhisper`.
+- **Input (Whisper)**: Set `ZOP_WHISPER_MODEL` to override the model path
+  (default: `~/.local/share/zop/whisper/ggml-base.en.bin`).
+- **Output (TTS)**: Set `ZOP_TTS_MODEL` to override the base model directory
+  (default: `~/.local/share/zop/tts/`).
+
+To build a smaller binary without voice, omit the tags, or grab
+release artifacts suffixed with `-novoice`.
 
 ## Mobile Roadmap
 

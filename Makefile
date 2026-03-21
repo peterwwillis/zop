@@ -105,7 +105,7 @@ all: build
 # Standard Go targets
 # ==============================================================
 
-clean: whisper-clean tts-clean setup-go-clean build-bin-clean
+clean: whisper-clean tts-clean build-bin-clean
 
 ## deps: Download Go module dependencies
 deps:
