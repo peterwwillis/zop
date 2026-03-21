@@ -148,6 +148,9 @@ top_p       = 0.95
 # model_url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-low.tar.bz2"
 # model_name = "vits-piper-en_US-amy-low"
 # piper_model = "en_US-amy-low.onnx"
+# provider = "cpu"        # cpu, cuda, coreml, directml, tensorrt
+# chunk_size = 100        # approx tokens per chunk
+# sanitize_markdown = true
 speed = 1.5
 safety_delay_ms = 10
 `
@@ -201,11 +204,14 @@ type TemplateConfig struct {
 
 // TTSConfig holds settings for text-to-speech output.
 type TTSConfig struct {
-	ModelURL      string  `toml:"model_url"`
-	ModelName     string  `toml:"model_name"`
-	PiperModel    string  `toml:"piper_model"`
-	Speed         float32 `toml:"speed"`
-	SafetyDelayMS int     `toml:"safety_delay_ms"`
+	ModelURL         string  `toml:"model_url"`
+	ModelName        string  `toml:"model_name"`
+	PiperModel       string  `toml:"piper_model"`
+	Provider         string  `toml:"provider"`
+	ChunkSize        int     `toml:"chunk_size"`
+	SanitizeMarkdown bool    `toml:"sanitize_markdown"`
+	Speed            float32 `toml:"speed"`
+	SafetyDelayMS    int     `toml:"safety_delay_ms"`
 }
 
 // Config is the top-level configuration structure.
