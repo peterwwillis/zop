@@ -19,49 +19,44 @@ func NewPolicyChecker(policy config.ToolPolicy) *PolicyChecker {
 
 // IsAllowed checks if a command is allowed by the policy.
 // It returns true if allowed, false if denied.
+// By default, no tools are allowed unless AllowList is populated and matches.
 func (pc *PolicyChecker) IsAllowed(command string) bool {
+	if len(pc.policy.AllowList) == 0 {
+		return false
+	}
+
 	parts := pc.detokenize(command)
 
-	// 1. Check DenyList
+	// 1. Check DenyList (deny always trumps allow)
 	for _, entry := range pc.policy.DenyList {
 		if pc.matches(entry, command, parts) {
 			return false
 		}
 	}
 
-	// 2. Check for DenyTags (if any matching entry in AllowList or DenyList has a denied tag)
-	// Actually, the user says "deny must always trump allow".
-	// Let's refine: if it matches an AllowList entry but that entry has a DenyTag, it's denied.
+	// 2. Check for DenyTags
+	// Check if ANY matching entry in AllowList or DenyList has a denied tag.
+	// User said "deny must always trump allow".
 
-	if len(pc.policy.AllowList) > 0 {
-		allowed := false
-		for _, entry := range pc.policy.AllowList {
-			if pc.matches(entry, command, parts) {
-				// If it matches an allow entry, we still check if it has a denied tag
-				if pc.hasDeniedTag(entry.Tags) {
-					return false
-				}
-				// If it matches and we have AllowTags, check if it has at least one allow tag
-				if len(pc.policy.AllowTags) > 0 {
-					if pc.hasAllowedTag(entry.Tags) {
-						allowed = true
-					}
-				} else {
+	allowed := false
+	for _, entry := range pc.policy.AllowList {
+		if pc.matches(entry, command, parts) {
+			// If it matches an allow entry, we still check if it has a denied tag
+			if pc.hasDeniedTag(entry.Tags) {
+				return false
+			}
+			// If it matches and we have AllowTags, check if it has at least one allow tag
+			if len(pc.policy.AllowTags) > 0 {
+				if pc.hasAllowedTag(entry.Tags) {
 					allowed = true
 				}
+			} else {
+				allowed = true
 			}
 		}
-		if !allowed {
-			return false
-		}
-	} else {
-		// If AllowList is empty, we still want to support tag-based denial.
-		// We'll look for ANY matching entry in DenyList that has a denied tag (already covered by DenyList check above).
-		// But what if an entry is NOT in DenyList but has a DenyTag?
-		// Tags are only on entries. If it doesn't match an entry, it doesn't have tags.
 	}
 
-	return true
+	return allowed
 }
 
 func (pc *PolicyChecker) matches(entry config.ToolEntry, command string, parts []string) bool {

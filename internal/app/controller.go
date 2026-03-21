@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -91,7 +90,10 @@ func (c *Controller) ConfigPath() string {
 func (c *Controller) AgentNames() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return sortedAgentNames(c.cfg)
+	if c.cfg == nil {
+		return nil
+	}
+	return c.cfg.SortedAgentNames()
 }
 
 // ActiveAgent returns the currently selected agent name.
@@ -359,23 +361,11 @@ func defaultAgentName(cfg *config.Config) string {
 	if _, ok := cfg.Agents["default"]; ok {
 		return "default"
 	}
-	names := sortedAgentNames(cfg)
+	names := cfg.SortedAgentNames()
 	if len(names) == 0 {
 		return ""
 	}
 	return names[0]
-}
-
-func sortedAgentNames(cfg *config.Config) []string {
-	if cfg == nil {
-		return nil
-	}
-	names := make([]string, 0, len(cfg.Agents))
-	for name := range cfg.Agents {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }
 
 func ensureWhisperModelPath() error {

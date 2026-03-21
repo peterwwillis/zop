@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 )
@@ -239,6 +240,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %q: %w", path, err)
 	}
 
+	// If the file contains an [agents] section, we clear the default agents.
+	var raw map[string]interface{}
+	if _, err := toml.Decode(string(data), &raw); err == nil {
+		if _, hasAgents := raw["agents"]; hasAgents {
+			cfg.Agents = make(map[string]AgentConfig)
+		}
+	}
+
 	if _, err := toml.Decode(string(data), cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %q: %w", path, err)
 	}
@@ -247,14 +256,34 @@ func Load(path string) (*Config, error) {
 
 // GetAgent returns the AgentConfig for the named agent.
 func (c *Config) GetAgent(name string) (AgentConfig, error) {
-	if name == "" {
-		name = "default"
+	if name == "" || name == "default" {
+		if a, ok := c.Agents["default"]; ok {
+			return a, nil
+		}
+		// Fallback to first agent found (sorted)
+		names := c.SortedAgentNames()
+		if len(names) > 0 {
+			return c.Agents[names[0]], nil
+		}
+		if name == "" {
+			name = "default"
+		}
 	}
 	a, ok := c.Agents[name]
 	if !ok {
 		return AgentConfig{}, fmt.Errorf("agent %q not found in config", name)
 	}
 	return a, nil
+}
+
+// SortedAgentNames returns agent names in alphabetical order.
+func (c *Config) SortedAgentNames() []string {
+	keys := make([]string, 0, len(c.Agents))
+	for k := range c.Agents {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // GetProvider returns the ProviderConfig for the named provider.
@@ -330,6 +359,8 @@ func LoadRaw(path string) (RawConfig, error) {
 	ensureSection(raw, "agents")
 	ensureSection(raw, "providers")
 	ensureSection(raw, "models")
+	ensureSection(raw, "mcp_servers")
+	ensureSection(raw, "tool_policy")
 
 	return raw, nil
 }

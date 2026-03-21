@@ -107,6 +107,33 @@ func TestProviderAPIKey(t *testing.T) {
 	assert.Equal(t, "test-key-123", p.APIKey())
 }
 
+func TestGetAgentDefaultFallback(t *testing.T) {
+	content := `
+[agents.z-agent]
+provider = "openai"
+model = "gpt4o"
+
+[agents.a-agent]
+provider = "anthropic"
+model = "claude-sonnet"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	// Should fallback to a-agent (first sorted)
+	a, err := cfg.GetAgent("")
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", a.Provider)
+
+	a, err = cfg.GetAgent("default")
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", a.Provider)
+}
+
 func TestLoadZopInstructions(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")

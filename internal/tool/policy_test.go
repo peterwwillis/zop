@@ -42,8 +42,8 @@ func TestPolicyChecker(t *testing.T) {
 	assert.False(t, pc.IsAllowed("whoami"))
 }
 
-func TestPolicyChecker_Permissive(t *testing.T) {
-	// Empty AllowList should be permissive
+func TestPolicyChecker_RestrictiveByDefault(t *testing.T) {
+	// Empty AllowList should deny everything
 	policy := config.ToolPolicy{
 		DenyList: []config.ToolEntry{
 			{Exact: []string{"rm", "-rf", "/"}},
@@ -51,7 +51,7 @@ func TestPolicyChecker_Permissive(t *testing.T) {
 	}
 	pc := NewPolicyChecker(policy)
 
-	assert.True(t, pc.IsAllowed("ls -la"))
+	assert.False(t, pc.IsAllowed("ls -la"))
 	assert.False(t, pc.IsAllowed("rm -rf /"))
 }
 
@@ -78,4 +78,6 @@ func TestPolicyChecker_Tags(t *testing.T) {
 	assert.True(t, pc.IsAllowed("ls"))
 	// rm has 'write' tag which is denied
 	assert.False(t, pc.IsAllowed("rm"))
+	// whoami is not in allow list
+	assert.False(t, pc.IsAllowed("whoami"))
 }

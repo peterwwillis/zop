@@ -183,9 +183,17 @@ Tools provided by these servers will be automatically registered and made availa
 
 `zop` provides a flexible security policy system for tool calls, allowing you to control which commands the `run_command` tool is allowed to execute. Policies can be defined globally or overridden per-agent.
 
-A policy consists of an `allow_list`, a `deny_list`, and tag-based filtering. If the `allow_list` is empty, all commands are allowed unless they match an entry in the `deny_list` or have a denied tag. If the `allow_list` is populated, only commands matching an entry in the list (and not denied) are allowed.
+A policy consists of an `allow_list`, a `deny_list`, and tag-based filtering. **By default, no tools are allowed to run.** You must populate the `allow_list` to grant permission for specific commands. If a command matches both an `allow_list` entry and a `deny_list` entry (or has a denied tag), it will be denied.
 
 ### Configuration
+
+You can manage policies using the `config` CLI command or by editing `config.toml`:
+
+```sh
+# Allow a specific command
+zop config set tool_policy.my-allow-rule.exact '["ls", "-la"]'
+zop config set tool_policy.my-allow-rule.tags '["safe"]'
+```
 
 Add `tool_policy` to your `config.toml`:
 
