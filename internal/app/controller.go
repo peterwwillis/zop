@@ -57,7 +57,10 @@ func NewController(configPath, sessionName, agentName string) (*Controller, erro
 		agentName = defaultAgentName(cfg)
 	}
 
-	speaker, _ := tts.NewSpeaker(cfg.TTS)
+	speaker, err := tts.NewSpeaker(cfg.TTS)
+	if err != nil {
+		return nil, fmt.Errorf("initializing TTS speaker: %w", err)
+	}
 
 	ctrl := &Controller{
 		cfg:         cfg,
@@ -134,7 +137,11 @@ func (c *Controller) ReloadConfig() error {
 	if c.speaker != nil {
 		_ = c.speaker.Close()
 	}
-	c.speaker, _ = tts.NewSpeaker(c.cfg.TTS)
+	speaker, err := tts.NewSpeaker(c.cfg.TTS)
+	if err != nil {
+		return fmt.Errorf("re-initializing TTS speaker: %w", err)
+	}
+	c.speaker = speaker
 
 	return c.reloadProviderLocked()
 }
