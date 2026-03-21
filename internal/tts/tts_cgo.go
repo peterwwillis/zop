@@ -181,8 +181,13 @@ func (s *cgoSpeaker) speakChunk(text string, speed float32) error {
 	goSamples := make([]float32, n)
 	copy(goSamples, samples)
 
-	// Lazily initialize or replace audio player if sample rate changed
 	sampleRate := int(audio.sample_rate)
+
+	if os.Getenv("ZOP_DEBUG_TTS") == "1" {
+		fmt.Fprintf(os.Stderr, "[zop] tts: generated %d samples, sample rate: %d\n", n, sampleRate)
+	}
+
+	// Lazily initialize or replace audio player if sample rate changed
 	if s.player == nil || s.player.sampleRate != sampleRate {
 		if s.player != nil {
 			s.player.Close()

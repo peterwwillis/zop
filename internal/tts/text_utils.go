@@ -5,18 +5,37 @@ import (
 	"strings"
 )
 
+var (
+	reCodeBlock      = regexp.MustCompile("(?s)```.*?```")
+	reLink           = regexp.MustCompile(`\[(.*?)\]\(.*?\)|<(.*?)>`)
+	reLinkInner      = regexp.MustCompile(`\[(.*?)\]\(.*?\)` )
+	reBacktick       = regexp.MustCompile("`")
+	reHeading        = regexp.MustCompile(`(?m)^#{1,6}\s+`)
+	reBold1          = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	reBold2          = regexp.MustCompile(`__([^_]+)__`)
+	reItalic1        = regexp.MustCompile(`\*([^*]+)\*`)
+	reItalic2        = regexp.MustCompile(`_([^_]+)_`)
+	reTaskList       = regexp.MustCompile(`(?m)^\s*[-*+]\s+\[[ xX]\]\s+`)
+	reList           = regexp.MustCompile(`(?m)^\s*[-*+]\s+`)
+	reNumList        = regexp.MustCompile(`(?m)^\s*\d+\.\s+`)
+	reBlockquote     = regexp.MustCompile(`(?m)^\s*>\s+`)
+	reHorizontalRule = regexp.MustCompile(`(?m)^\s*(\*\*\*+|---+|___+)\s*$`)
+	reSpaces         = regexp.MustCompile(` +`)
+	reNewlines       = regexp.MustCompile(`\n{3,}`)
+	reSentenceEnd    = regexp.MustCompile(`([.!?])(\s+|$)`)
+)
+
 func sanitizeMarkdown(text string) string {
 	// 1. Remove code blocks entirely (TTS usually fails on them or reads them weirdly)
-	text = regexp.MustCompile(`(?s)` + "```" + `.*?` + "```").ReplaceAllString(text, "")
+	text = reCodeBlock.ReplaceAllString(text, "")
 
 	// 2. Handle links: [text](url) -> text
-	text = regexp.MustCompile(`\[(.*?)\]\(.*?\)|<(.*?)>`).ReplaceAllStringFunc(text, func(s string) string {
+	text = reLink.ReplaceAllStringFunc(text, func(s string) string {
 		if strings.HasPrefix(s, "<") {
 			return "" // Remove <url>
 		}
 		// Extract text from [text](url)
-		re := regexp.MustCompile(`\[(.*?)\]\(.*?\)` )
-		matches := re.FindStringSubmatch(s)
+		matches := reLinkInner.FindStringSubmatch(s)
 		if len(matches) > 1 {
 			return matches[1]
 		}
@@ -24,27 +43,27 @@ func sanitizeMarkdown(text string) string {
 	})
 
 	// 3. Remove other markdown formatting but keep the text
-	text = regexp.MustCompile("`").ReplaceAllString(text, "")
-	text = regexp.MustCompile(`(?m)^#{1,6}\s+`).ReplaceAllString(text, "")
-	
+	text = reBacktick.ReplaceAllString(text, "")
+	text = reHeading.ReplaceAllString(text, "")
+
 	// Bold and Italic - simpler approach
-	text = regexp.MustCompile(`\*\*([^*]+)\*\*`).ReplaceAllString(text, "$1")
-	text = regexp.MustCompile(`__([^_]+)__`).ReplaceAllString(text, "$1")
-	text = regexp.MustCompile(`\*([^*]+)\*`).ReplaceAllString(text, "$1")
-	text = regexp.MustCompile(`_([^_]+)_`).ReplaceAllString(text, "$1")
+	text = reBold1.ReplaceAllString(text, "$1")
+	text = reBold2.ReplaceAllString(text, "$1")
+	text = reItalic1.ReplaceAllString(text, "$1")
+	text = reItalic2.ReplaceAllString(text, "$1")
 
 	// Lists and blockquotes
-	text = regexp.MustCompile(`(?m)^\s*[-*+]\s+\[[ xX]\]\s+`).ReplaceAllString(text, "  ") // Task lists
-	text = regexp.MustCompile(`(?m)^\s*[-*+]\s+`).ReplaceAllString(text, "  ")
-	text = regexp.MustCompile(`(?m)^\s*\d+\.\s+`).ReplaceAllString(text, "  ")
-	text = regexp.MustCompile(`(?m)^\s*>\s+`).ReplaceAllString(text, "  ")
-	
+	text = reTaskList.ReplaceAllString(text, "  ") // Task lists
+	text = reList.ReplaceAllString(text, "  ")
+	text = reNumList.ReplaceAllString(text, "  ")
+	text = reBlockquote.ReplaceAllString(text, "  ")
+
 	// Horizontal rules
-	text = regexp.MustCompile(`(?m)^\s*(\*\*\*+|---+|___+)\s*$`).ReplaceAllString(text, "")
+	text = reHorizontalRule.ReplaceAllString(text, "")
 
 	// Clean up multiple spaces and newlines
-	text = regexp.MustCompile(` +`).ReplaceAllString(text, " ")
-	text = regexp.MustCompile(`\n{3,}`).ReplaceAllString(text, "\n\n")
+	text = reSpaces.ReplaceAllString(text, " ")
+	text = reNewlines.ReplaceAllString(text, "\n\n")
 
 	return strings.TrimSpace(text)
 }
@@ -65,15 +84,13 @@ func splitIntoChunks(text string, chunkSize int) []string {
 
 	// Split by sentences (approximately)
 	// We look for punctuation followed by whitespace or EOF
-	sentenceEnd := regexp.MustCompile(`([.!?])(\s+|$)`)
-	
 	remaining := text
 	for len(remaining) > 0 {
 		remaining = strings.TrimSpace(remaining)
 		if remaining == "" {
 			break
 		}
-		
+
 		if len(remaining) <= charLimit {
 			chunks = append(chunks, remaining)
 			break
@@ -86,8 +103,8 @@ func splitIntoChunks(text string, chunkSize int) []string {
 			searchLimit = len(remaining)
 		}
 
-		locs := sentenceEnd.FindAllStringIndex(remaining[:searchLimit], -1)
-		
+		locs := reSentenceEnd.FindAllStringIndex(remaining[:searchLimit], -1)
+
 		splitAt := -1
 		if len(locs) > 0 {
 			// Find the last sentence end that is within charLimit, or the first one if none are.
