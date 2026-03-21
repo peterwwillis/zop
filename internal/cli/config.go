@@ -46,6 +46,9 @@ func newConfigShowCmd(gf *globalFlags) *cobra.Command {
 				if a.SystemPrompt != "" {
 					fmt.Fprintf(w, " system_prompt=%q", a.SystemPrompt)
 				}
+				if a.ToolPolicy != nil {
+					fmt.Fprintf(w, " has_tool_policy=true")
+				}
 				fmt.Fprintln(w)
 			}
 			fmt.Fprintln(w, "=== Providers ===")
@@ -69,6 +72,21 @@ func newConfigShowCmd(gf *globalFlags) *cobra.Command {
 				}
 				fmt.Fprintln(w)
 			}
+			fmt.Fprintln(w, "=== MCP Servers ===")
+			for _, name := range sortedKeys(cfg.MCPServers) {
+				s := cfg.MCPServers[name]
+				if s.URL != "" {
+					fmt.Fprintf(w, "  %-20s url=%s\n", name, s.URL)
+				} else {
+					fmt.Fprintf(w, "  %-20s command=%s args=%v\n", name, s.Command, s.Args)
+				}
+			}
+			fmt.Fprintln(w, "=== Global Tool Policy ===")
+			fmt.Fprintf(w, "  allow_list: %d entries\n", len(cfg.ToolPolicy.AllowList))
+			fmt.Fprintf(w, "  deny_list:  %d entries\n", len(cfg.ToolPolicy.DenyList))
+			fmt.Fprintf(w, "  allow_tags: %v\n", cfg.ToolPolicy.AllowTags)
+			fmt.Fprintf(w, "  deny_tags:  %v\n", cfg.ToolPolicy.DenyTags)
+
 			return nil
 		},
 	}
@@ -289,7 +307,7 @@ func newConfigPathCmd() *cobra.Command {
 }
 
 func configSections() []string {
-	return []string{"agents", "providers", "models"}
+	return []string{"agents", "providers", "models", "mcp_servers", "tool_policy"}
 }
 
 func configSection(raw config.RawConfig, section string) (map[string]map[string]interface{}, error) {

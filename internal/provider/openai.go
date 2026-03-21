@@ -35,7 +35,32 @@ func (p *openAICompatibleProvider) Name() string { return p.name }
 func (p *openAICompatibleProvider) Complete(ctx context.Context, req CompletionRequest) (CompletionResponse, error) {
 	msgs := make([]openai.ChatCompletionMessage, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = openai.ChatCompletionMessage{Role: m.Role, Content: m.Content}
+		var toolCalls []openai.ToolCall
+		for _, tc := range m.ToolCalls {
+			toolCalls = append(toolCalls, openai.ToolCall{
+				ID:       tc.ID,
+				Type:     openai.ToolTypeFunction,
+				Function: openai.FunctionCall{Name: tc.Name, Arguments: tc.Arguments},
+			})
+		}
+		msgs[i] = openai.ChatCompletionMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  toolCalls,
+			ToolCallID: m.ToolID,
+		}
+	}
+
+	var tools []openai.Tool
+	for _, t := range req.Tools {
+		tools = append(tools, openai.Tool{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        t.Name,
+				Description: t.Description,
+				Parameters:  t.Parameters,
+			},
+		})
 	}
 
 	oaiReq := openai.ChatCompletionRequest{
@@ -45,6 +70,7 @@ func (p *openAICompatibleProvider) Complete(ctx context.Context, req CompletionR
 		Temperature: req.Model.Temperature,
 		TopP:        req.Model.TopP,
 		Stream:      req.Stream,
+		Tools:       tools,
 	}
 
 	if req.Model.RepeatPenalty != 0 {
@@ -65,7 +91,20 @@ func (p *openAICompatibleProvider) syncCompletion(ctx context.Context, req opena
 	if len(resp.Choices) == 0 {
 		return CompletionResponse{}, fmt.Errorf("openai returned no choices")
 	}
-	return CompletionResponse{Content: resp.Choices[0].Message.Content}, nil
+
+	var toolCalls []ToolCall
+	for _, tc := range resp.Choices[0].Message.ToolCalls {
+		toolCalls = append(toolCalls, ToolCall{
+			ID:        tc.ID,
+			Name:      tc.Function.Name,
+			Arguments: tc.Function.Arguments,
+		})
+	}
+
+	return CompletionResponse{
+		Content:   resp.Choices[0].Message.Content,
+		ToolCalls: toolCalls,
+	}, nil
 }
 
 func (p *openAICompatibleProvider) streamCompletion(ctx context.Context, req openai.ChatCompletionRequest, fn func(string)) (CompletionResponse, error) {

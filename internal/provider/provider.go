@@ -10,8 +10,24 @@ import (
 
 // Message represents a single conversation turn.
 type Message struct {
-	Role    string // "system", "user", or "assistant"
-	Content string
+	Role       string // "system", "user", "assistant", or "tool"
+	Content    string
+	ToolCalls  []ToolCall // For role "assistant"
+	ToolID     string     // For role "tool"
+}
+
+// ToolCall represents a request from the model to call a tool.
+type ToolCall struct {
+	ID        string
+	Name      string
+	Arguments string // JSON-encoded arguments
+}
+
+// Tool defines a tool that can be called by the model.
+type Tool struct {
+	Name        string
+	Description string
+	Parameters  interface{} // JSON schema for parameters
 }
 
 // CompletionRequest contains all parameters for a completion call.
@@ -20,11 +36,13 @@ type CompletionRequest struct {
 	Model       config.ModelConfig
 	Stream      bool
 	StreamFunc  func(chunk string) // called for each streamed chunk when Stream is true
+	Tools       []Tool
 }
 
 // CompletionResponse holds the model's reply.
 type CompletionResponse struct {
-	Content string
+	Content   string
+	ToolCalls []ToolCall
 }
 
 // Provider is the common interface that all AI backend implementations satisfy.

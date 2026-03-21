@@ -50,6 +50,25 @@ base_url    = "https://openrouter.ai/api/v1"
 base_url = "http://localhost:11434/v1"
 
 # ─────────────────────────────────────────────
+# MCP Servers – Model Context Protocol tools
+# ─────────────────────────────────────────────
+
+# [mcp_servers.everything]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-everything"]
+
+# [mcp_servers.sqlite]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-sqlite", "--db", "zop.db"]
+
+# [mcp_servers.memory]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-memory"]
+
+# [mcp_servers.remote]
+# url = "http://localhost:8080/mcp/sse"
+
+# ─────────────────────────────────────────────
 # Models
 # ─────────────────────────────────────────────
 

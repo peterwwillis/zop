@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 )
@@ -134,9 +135,11 @@ safety_delay_ms = 10
 
 // AgentConfig defines a named agent that pairs a provider with a model.
 type AgentConfig struct {
-	Provider     string `toml:"provider"`
-	Model        string `toml:"model"`
-	SystemPrompt string `toml:"system_prompt"`
+	Provider     string      `toml:"provider"`
+	Model        string      `toml:"model"`
+	SystemPrompt string      `toml:"system_prompt"`
+	ToolPolicy   *ToolPolicy `toml:"tool_policy,omitempty"`
+	DisableTools bool        `toml:"disable_tools"`
 }
 
 // ProviderConfig holds connection settings for an AI provider.
@@ -173,10 +176,37 @@ type TTSConfig struct {
 
 // Config is the top-level configuration structure.
 type Config struct {
-	Agents    map[string]AgentConfig    `toml:"agents"`
-	Providers map[string]ProviderConfig `toml:"providers"`
-	Models    map[string]ModelConfig    `toml:"models"`
-	TTS       TTSConfig                 `toml:"tts"`
+	Agents       map[string]AgentConfig     `toml:"agents"`
+	Providers    map[string]ProviderConfig  `toml:"providers"`
+	Models       map[string]ModelConfig     `toml:"models"`
+	MCPServers   map[string]MCPServerConfig `toml:"mcp_servers"`
+	ToolPolicy   ToolPolicy                 `toml:"tool_policy"`
+	DisableTools bool                       `toml:"disable_tools"`
+	TTS          TTSConfig                  `toml:"tts"`
+}
+
+// ToolPolicy defines allowlist and denylist for tool calls.
+type ToolPolicy struct {
+	AllowList []ToolEntry `toml:"allow_list"`
+	DenyList  []ToolEntry `toml:"deny_list"`
+	AllowTags []string    `toml:"allow_tags"`
+	DenyTags  []string    `toml:"deny_tags"`
+}
+
+// ToolEntry represents a pattern to match a tool call.
+type ToolEntry struct {
+	Tool       string   `toml:"tool,omitempty"`
+	Exact      []string `toml:"exact,omitempty"`
+	Regex      string   `toml:"regex,omitempty"`
+	RegexArray []string `toml:"regex_array,omitempty"`
+	Tags       []string `toml:"tags,omitempty"`
+}
+
+// MCPServerConfig defines an MCP server connection.
+type MCPServerConfig struct {
+	URL     string   `toml:"url"`
+	Command string   `toml:"command"`
+	Args    []string `toml:"args"`
 }
 
 // RawConfig is the untyped config structure used for editing config files.
@@ -192,6 +222,23 @@ func DefaultConfigPath() string {
 		return "config.toml"
 	}
 	return filepath.Join(home, ".config", "zop", "config.toml")
+}
+
+// LoadZopInstructions reads ZOP.md from the same directory as the config file.
+func LoadZopInstructions(configPath string) (string, error) {
+	if configPath == "" {
+		configPath = DefaultConfigPath()
+	}
+	dir := filepath.Dir(configPath)
+	path := filepath.Join(dir, "ZOP.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("reading ZOP.md: %w", err)
+	}
+	return string(data), nil
 }
 
 // Load reads a TOML config file and returns a *Config.
@@ -216,6 +263,14 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config %q: %w", path, err)
 	}
 
+	// If the file contains an [agents] section, we clear the default agents.
+	var raw map[string]interface{}
+	if _, err := toml.Decode(string(data), &raw); err == nil {
+		if _, hasAgents := raw["agents"]; hasAgents {
+			cfg.Agents = make(map[string]AgentConfig)
+		}
+	}
+
 	if _, err := toml.Decode(string(data), cfg); err != nil {
 		return nil, fmt.Errorf("parsing config %q: %w", path, err)
 	}
@@ -224,14 +279,34 @@ func Load(path string) (*Config, error) {
 
 // GetAgent returns the AgentConfig for the named agent.
 func (c *Config) GetAgent(name string) (AgentConfig, error) {
-	if name == "" {
-		name = "default"
+	if name == "" || name == "default" {
+		if a, ok := c.Agents["default"]; ok {
+			return a, nil
+		}
+		// Fallback to first agent found (sorted)
+		names := c.SortedAgentNames()
+		if len(names) > 0 {
+			return c.Agents[names[0]], nil
+		}
+		if name == "" {
+			name = "default"
+		}
 	}
 	a, ok := c.Agents[name]
 	if !ok {
 		return AgentConfig{}, fmt.Errorf("agent %q not found in config", name)
 	}
 	return a, nil
+}
+
+// SortedAgentNames returns agent names in alphabetical order.
+func (c *Config) SortedAgentNames() []string {
+	keys := make([]string, 0, len(c.Agents))
+	for k := range c.Agents {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // GetProvider returns the ProviderConfig for the named provider.
@@ -307,6 +382,8 @@ func LoadRaw(path string) (RawConfig, error) {
 	ensureSection(raw, "agents")
 	ensureSection(raw, "providers")
 	ensureSection(raw, "models")
+	ensureSection(raw, "mcp_servers")
+	ensureSection(raw, "tool_policy")
 
 	return raw, nil
 }
