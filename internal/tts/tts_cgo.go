@@ -88,23 +88,14 @@ func newSpeaker(cfg config.TTSConfig) (Speaker, error) {
 		return nil, fmt.Errorf("failed to create sherpa-onnx TTS instance")
 	}
 
-	// Sample rate for Piper models is usually 22050 or 16000.
-	// amy-low is 16000 according to logs.
-	player, err := newAudioPlayer(16000)
-	if err != nil {
-		C.SherpaOnnxDestroyOfflineTts(tts)
-		return nil, fmt.Errorf("failed to create audio player: %w", err)
-	}
-
 	speed := float32(1.0)
 	if cfg.Speed > 0 {
 		speed = cfg.Speed
 	}
 
 	return &cgoSpeaker{
-		tts:    tts,
-		player: player,
-		speed:  speed,
+		tts:   tts,
+		speed: speed,
 	}, nil
 }
 
@@ -156,6 +147,19 @@ func (s *cgoSpeaker) Speak(ctx context.Context, text string) error {
 	// Copy samples to a new slice to be safe
 	goSamples := make([]float32, n)
 	copy(goSamples, samples)
+
+	// Lazily initialize or replace audio player if sample rate changed
+	sampleRate := int(audio.sample_rate)
+	if s.player == nil || s.player.sampleRate != sampleRate {
+		if s.player != nil {
+			s.player.Close()
+		}
+		player, err := newAudioPlayer(sampleRate)
+		if err != nil {
+			return fmt.Errorf("failed to create audio player: %w", err)
+		}
+		s.player = player
+	}
 
 	s.player.Play(goSamples)
 

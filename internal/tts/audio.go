@@ -16,6 +16,7 @@ type audioPlayer struct {
 	mu            sync.Mutex
 	queue         [][]float32
 	samplesToWait int64
+	sampleRate    int
 }
 
 func newAudioPlayer(sampleRate int) (*audioPlayer, error) {
@@ -25,7 +26,8 @@ func newAudioPlayer(sampleRate int) (*audioPlayer, error) {
 	}
 
 	p := &audioPlayer{
-		mctx: mctx,
+		mctx:       mctx,
+		sampleRate: sampleRate,
 	}
 
 	cfg := malgo.DefaultDeviceConfig(malgo.Playback)
