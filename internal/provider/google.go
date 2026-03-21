@@ -35,9 +35,20 @@ func (p *googleProvider) Name() string { return "google" }
 
 // Google Gemini generateContent types.
 type googleRequest struct {
-	Contents         []googleContent       `json:"contents"`
-	SystemInstruction *googleContent        `json:"systemInstruction,omitempty"`
+	Contents         []googleContent         `json:"contents"`
+	SystemInstruction *googleContent          `json:"systemInstruction,omitempty"`
 	GenerationConfig *googleGenerationConfig `json:"generationConfig,omitempty"`
+	Tools            []googleTool            `json:"tools,omitempty"`
+}
+
+type googleTool struct {
+	FunctionDeclarations []googleFunctionDeclaration `json:"function_declarations,omitempty"`
+}
+
+type googleFunctionDeclaration struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description,omitempty"`
+	Parameters  interface{} `json:"parameters,omitempty"`
 }
 
 type googleContent struct {
@@ -46,7 +57,19 @@ type googleContent struct {
 }
 
 type googlePart struct {
-	Text string `json:"text"`
+	Text         string              `json:"text,omitempty"`
+	FunctionCall *googleFunctionCall `json:"functionCall,omitempty"`
+	FunctionResponse *googleFunctionResponse `json:"functionResponse,omitempty"`
+}
+
+type googleFunctionCall struct {
+	Name string                 `json:"name"`
+	Args map[string]interface{} `json:"args"`
+}
+
+type googleFunctionResponse struct {
+	Name     string                 `json:"name"`
+	Response map[string]interface{} `json:"response"`
 }
 
 type googleGenerationConfig struct {
@@ -72,22 +95,49 @@ func (p *googleProvider) Complete(ctx context.Context, req CompletionRequest) (C
 	var contents []googleContent
 
 	for _, m := range req.Messages {
-		switch m.Role {
-		case "system":
+		if m.Role == "system" {
 			systemInstruction = &googleContent{
 				Parts: []googlePart{{Text: m.Content}},
 			}
+			continue
+		}
+
+		var parts []googlePart
+		role := m.Role
+		switch m.Role {
 		case "user":
-			contents = append(contents, googleContent{
-				Role:  "user",
-				Parts: []googlePart{{Text: m.Content}},
-			})
+			parts = append(parts, googlePart{Text: m.Content})
 		case "assistant":
-			contents = append(contents, googleContent{
-				Role:  "model",
-				Parts: []googlePart{{Text: m.Content}},
+			role = "model"
+			if m.Content != "" {
+				parts = append(parts, googlePart{Text: m.Content})
+			}
+			for _, tc := range m.ToolCalls {
+				var args map[string]interface{}
+				_ = json.Unmarshal([]byte(tc.Arguments), &args)
+				parts = append(parts, googlePart{
+					FunctionCall: &googleFunctionCall{Name: tc.Name, Args: args},
+				})
+			}
+		case "tool":
+			role = "function" // Google uses 'function' role for tool results in some API versions, but usually it's model -> functionResponse
+			// Actually, Google's structure is a bit different. Tool results go into 'parts' with 'functionResponse'.
+			var resp map[string]interface{}
+			_ = json.Unmarshal([]byte(m.Content), &resp)
+			parts = append(parts, googlePart{
+				FunctionResponse: &googleFunctionResponse{Name: m.ToolID, Response: resp},
 			})
 		}
+		contents = append(contents, googleContent{Role: role, Parts: parts})
+	}
+
+	var funcDecls []googleFunctionDeclaration
+	for _, t := range req.Tools {
+		funcDecls = append(funcDecls, googleFunctionDeclaration{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  t.Parameters,
+		})
 	}
 
 	gReq := googleRequest{
@@ -99,6 +149,9 @@ func (p *googleProvider) Complete(ctx context.Context, req CompletionRequest) (C
 			TopP:            req.Model.TopP,
 			TopK:            req.Model.TopK,
 		},
+	}
+	if len(funcDecls) > 0 {
+		gReq.Tools = []googleTool{{FunctionDeclarations: funcDecls}}
 	}
 
 	data, err := json.Marshal(gReq)
@@ -135,12 +188,24 @@ func (p *googleProvider) Complete(ctx context.Context, req CompletionRequest) (C
 		return CompletionResponse{}, fmt.Errorf("google API error (%s): %s", gResp.Error.Status, gResp.Error.Message)
 	}
 
+	var result CompletionResponse
 	for _, candidate := range gResp.Candidates {
 		for _, part := range candidate.Content.Parts {
 			if part.Text != "" {
-				return CompletionResponse{Content: part.Text}, nil
+				result.Content += part.Text
+			}
+			if part.FunctionCall != nil {
+				argsData, _ := json.Marshal(part.FunctionCall.Args)
+				result.ToolCalls = append(result.ToolCalls, ToolCall{
+					ID:        part.FunctionCall.Name, // Gemini doesn't always have IDs, uses Name
+					Name:      part.FunctionCall.Name,
+					Arguments: string(argsData),
+				})
 			}
 		}
 	}
-	return CompletionResponse{}, fmt.Errorf("google returned no text content")
+	if result.Content == "" && len(result.ToolCalls) == 0 {
+		return CompletionResponse{}, fmt.Errorf("google returned no content")
+	}
+	return result, nil
 }

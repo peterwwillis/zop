@@ -16,7 +16,9 @@ import (
 
 	"github.com/peterwwillis/zop/internal/chat"
 	"github.com/peterwwillis/zop/internal/config"
+	"github.com/peterwwillis/zop/internal/mcp"
 	"github.com/peterwwillis/zop/internal/provider"
+	"github.com/peterwwillis/zop/internal/tool"
 	"github.com/peterwwillis/zop/internal/whisper"
 )
 
@@ -35,6 +37,7 @@ type globalFlags struct {
 	agent      string
 	verbose    bool
 	debug      bool
+	noTools    bool
 }
 
 var sessionPartSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
@@ -71,6 +74,7 @@ The prompt can be supplied as:
 	root.PersistentFlags().StringVarP(&gf.agent, "agent", "a", "default", "agent to use (defined in config)")
 	root.PersistentFlags().BoolVarP(&gf.verbose, "verbose", "v", false, "verbose output")
 	root.PersistentFlags().BoolVarP(&gf.debug, "debug", "d", false, "enable debug diagnostics (sets ZOP_DEBUG_VAD=1)")
+	root.PersistentFlags().BoolVarP(&gf.noTools, "no-tools", "T", false, "disable tool calling support")
 
 	// Completion-specific flags (attached to root so they appear in help)
 	root.Flags().StringP("chat", "c", "", "chat session name for multi-turn conversations")
@@ -114,6 +118,36 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 	prov, err := provider.New(gf.agent, cfg)
 	if err != nil {
 		return err
+	}
+
+	// Initialize tools/MCP
+	registry := tool.NewRegistry()
+	policy := cfg.ToolPolicy
+	if agent.ToolPolicy != nil {
+		policy = *agent.ToolPolicy
+	}
+	registry.Register(&tool.RunCommandTool{
+		Policy: tool.NewPolicyChecker(policy),
+	})
+	checker := tool.NewPolicyChecker(policy)
+	for name, mcpCfg := range cfg.MCPServers {
+		mcpClient, err := mcp.NewClient(context.Background(), mcpCfg.URL, mcpCfg.Command, mcpCfg.Args...)
+		if err != nil {
+			if gf.verbose {
+				fmt.Fprintf(cmd.ErrOrStderr(), "[zop] warning: failed to connect to MCP server %q: %v\n", name, err)
+			}
+			continue
+		}
+		wrappers, err := mcp.WrapTools(context.Background(), mcpClient, checker)
+		if err != nil {
+			if gf.verbose {
+				fmt.Fprintf(cmd.ErrOrStderr(), "[zop] warning: failed to list tools for MCP server %q: %v\n", name, err)
+			}
+			continue
+		}
+		for _, w := range wrappers {
+			registry.Register(w)
+		}
 	}
 
 	out := cmd.OutOrStdout()
@@ -218,6 +252,31 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 		messages = append(messages, provider.Message{Role: "system", Content: agent.SystemPrompt})
 	case modelCfg.SystemPrompt != "":
 		messages = append(messages, provider.Message{Role: "system", Content: modelCfg.SystemPrompt})
+	}
+
+	// Load ZOP.md instructions
+	zopInstructions, err := config.LoadZopInstructions(gf.configFile)
+	if err != nil {
+		if gf.verbose {
+			fmt.Fprintf(errOut, "[zop] warning: could not load ZOP.md: %v\n", err)
+		}
+	} else if zopInstructions != "" {
+		messages = append(messages, provider.Message{Role: "system", Content: zopInstructions})
+	}
+
+	useTools := !gf.noTools && !agent.DisableTools && !cfg.DisableTools
+	if useTools && len(policy.AllowList) == 0 {
+		if gf.verbose {
+			fmt.Fprintln(errOut, "[zop] tools enabled but allow_list is empty; disabling tools for this request")
+		}
+		useTools = false
+	}
+
+	if useTools {
+		messages = append(messages, provider.Message{
+			Role:    "system",
+			Content: "You have access to tools. Use them ONLY when explicitly required by the user's request or necessary to fulfill it. If you can provide a high-quality response without tools, do so.",
+		})
 	}
 
 	// Keep the system-prompt slice so we can reset history when rotating to a
@@ -325,29 +384,80 @@ func runCompletion(cmd *cobra.Command, args []string, gf *globalFlags) error {
 			if gf.verbose {
 				fmt.Fprintf(errOut, "[zop] sending text to AI (%d chars)\n", len(prompt))
 			}
-			reqMessages := append(append([]provider.Message(nil), messages...), userMessage)
-			req := provider.CompletionRequest{
-				Messages:   reqMessages,
-				Model:      modelCfg,
-				Stream:     streamFlag,
-				StreamFunc: streamFn,
-			}
-			resp, rerr := prov.Complete(context.Background(), req)
-			if rerr != nil {
-				if attempt == 0 && interactive && chatName != "" && sessionMgr != nil && isContextOverflowError(rerr) {
-					if err := rolloverSession(); err != nil {
-						return fmt.Errorf("rolling over context-limited session: %w", err)
-					}
-					continue
+			currentMessages := append(append([]provider.Message(nil), messages...), userMessage)
+			for {
+				var tools []provider.Tool
+				if useTools {
+					tools = registry.List()
 				}
-				return rerr
+				req := provider.CompletionRequest{
+					Messages:   currentMessages,
+					Model:      modelCfg,
+					Stream:     streamFlag,
+					StreamFunc: streamFn,
+					Tools:      tools,
+				}
+				resp, rerr := prov.Complete(context.Background(), req)
+				if rerr != nil {
+					if attempt == 0 && interactive && chatName != "" && sessionMgr != nil && isContextOverflowError(rerr) {
+						if err := rolloverSession(); err != nil {
+							return fmt.Errorf("rolling over context-limited session: %w", err)
+						}
+						continue
+					}
+					return rerr
+				}
+
+				if !streamFlag {
+					fmt.Fprintln(out, resp.Content)
+				} else {
+					fmt.Fprintln(out)
+				}
+
+				currentMessages = append(currentMessages, provider.Message{
+					Role:      "assistant",
+					Content:   resp.Content,
+					ToolCalls: resp.ToolCalls,
+				})
+
+				if len(resp.ToolCalls) == 0 {
+					break
+				}
+
+				// Execute tool calls
+				for _, tc := range resp.ToolCalls {
+					if gf.verbose {
+						fmt.Fprintf(errOut, "[zop] tool call: %s(%s)\n", tc.Name, tc.Arguments)
+					}
+					t, ok := registry.Get(tc.Name)
+					var toolResult string
+					if !ok {
+						toolResult = fmt.Sprintf("Error: tool %q not found", tc.Name)
+					} else {
+						// For run_command, we might want to ask confirmation if not in a special mode,
+						// but the user asked for CLI tool calling support.
+						res, err := t.Execute(context.Background(), tc.Arguments)
+						if err != nil {
+							toolResult = fmt.Sprintf("Error: %v", err)
+						} else {
+							toolResult = res
+						}
+					}
+					currentMessages = append(currentMessages, provider.Message{
+						Role:    "tool",
+						ToolID:  tc.ID,
+						Content: toolResult,
+					})
+					if gf.verbose {
+						fmt.Fprintf(errOut, "[zop] tool result: %d chars\n", len(toolResult))
+					}
+				}
+				if streamFlag {
+					fmt.Fprintln(out, "[tool calling...]")
+				}
 			}
-			if !streamFlag {
-				fmt.Fprintln(out, resp.Content)
-			} else {
-				fmt.Fprintln(out)
-			}
-			messages = append(reqMessages, provider.Message{Role: "assistant", Content: resp.Content})
+
+			messages = currentMessages
 			if chatName != "" && sessionMgr != nil {
 				if err := sessionMgr.Save(chatName, messages); err != nil {
 					fmt.Fprintf(errOut, "[zop] warning: could not save session: %v\n", err)

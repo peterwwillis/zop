@@ -10,10 +10,14 @@ voice input via Whisper in whisper-enabled builds.
 ## Features
 
 - **Multiple providers**: OpenAI, Anthropic (Claude), Google (Gemini), OpenRouter, Ollama
-- **TOML config**: Define multiple named *agents*, *providers*, and *models* in `~/.config/zop/config.toml`
+- **TOML config**: Define multiple named *agents*, *providers*, *models*, and *MCP servers* in `~/.config/zop/config.toml`
+- **Tool Calling**: Models can execute tools (on by default if `allow_list` is populated; use `--no-tools` to disable)
+- **Model Context Protocol (MCP)**: Connect to external tools via MCP servers
+- **Instruction Autoloading**: Automatically loads `ZOP.md` from the config directory as global instructions
 - **Chat sessions**: Persistent multi-turn conversations stored locally
 - **Streaming**: Real-time token streaming via `--stream`
 - **Voice input** *(whisper-enabled builds)*: `--voice` flag for microphone input via Whisper
+- **Voice transcription**: Transcription output shown during voice input (with `--verbose`)
 
 ## Installation
 
@@ -50,6 +54,9 @@ zop --interactive
 
 # Stream the response
 zop --stream "Write a haiku about Go"
+
+# Disable tool calling support (enabled by default if allow_list is populated)
+zop --no-tools "How are you?"
 
 # Voice input (whisper-enabled build)
 zop --voice
@@ -99,6 +106,7 @@ export OPENROUTER_API_KEY="..."
 provider = "openai"
 model    = "gpt4o"
 system_prompt = "You are a helpful assistant."
+disable_tools = false
 
 [agents.claude]
 provider = "anthropic"
@@ -110,6 +118,11 @@ api_key_env = "OPENAI_API_KEY"
 
 [providers.ollama]
 base_url = "http://localhost:11434/v1"  # no API key required
+
+# MCP Servers (optional)
+[mcp_servers.sqlite]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sqlite", "--db", "zop.db"]
 
 # Model hyperparameters
 [models.gpt4o]
@@ -142,6 +155,99 @@ zop chat list              # list all sessions
 zop chat show my-chat      # show messages in a session
 zop chat delete my-chat    # delete a session
 ```
+
+## Tool Calling & MCP
+
+`zop` supports tool calling, allowing models to interact with the external world.
+
+### Built-in Tools
+- **`run_command`**: Execute a shell command. The model can request to run commands to perform tasks or gather information. *Note: Commands are executed automatically by the CLI.*
+
+### Model Context Protocol (MCP)
+`zop` supports the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) for connecting to external tool servers.
+
+To use MCP, add `mcp_servers` to your `config.toml`:
+
+```toml
+[mcp_servers.sqlite]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-sqlite", "--db", "zop.db"]
+
+[mcp_servers.everything]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-everything"]
+
+[mcp_servers.remote]
+url = "http://localhost:8080/mcp/sse"
+```
+
+Tools provided by these servers will be automatically registered and made available to models that support tool calling (OpenAI, Anthropic, Google Gemini) in both the CLI and Mobile UI.
+
+## Tool Call Security Policies
+
+Tool calling is **enabled by default** whenever you have an `allow_list` populated in your configuration. Models will only see tool definitions that they are permitted to use.
+
+### Disabling Tool Calling
+If you wish to prevent models from using tools entirely:
+- **CLI Flag**: Use `--no-tools` (or `-T`) to disable tools for a single command.
+- **Configuration**: Set `disable_tools = true` globally or per-agent in your `config.toml`.
+
+`zop` provides a flexible security policy system for tool calls, allowing you to control which commands the `run_command` tool is allowed to execute. Policies can be defined globally or overridden per-agent.
+
+A policy consists of an `allow_list`, a `deny_list`, and tag-based filtering. **By default, no tools are allowed to run.** You must populate the `allow_list` to grant permission for specific tools or commands.
+
+### Configuration
+
+You can manage policies using the `config` CLI command or by editing `config.toml`:
+
+```sh
+# Allow a specific shell command
+zop config set tool_policy.my-allow-rule.exact '["ls", "-la"]'
+
+# Allow an MCP tool by name
+zop config set tool_policy.mcp-rule.tool "everything.list_files"
+```
+
+Add `tool_policy` to your `config.toml`:
+
+```toml
+[tool_policy]
+# Global tags filtering
+deny_tags = ["dangerous", "network"]
+allow_tags = ["safe"]
+
+# Allow specific commands and MCP tools
+allow_list = [
+    # Shell command (run_command)
+    { tool = "run_command", exact = ["ls", "-la"], tags = ["safe", "fs"] },
+    
+    # MCP Tool by name
+    { tool = "sqlite.query", tags = ["safe"] },
+    
+    # MCP Tool with argument filtering (Regex on the JSON arguments string)
+    { tool = "everything.read_file", regex = "notes.txt" }
+]
+
+# Deny specific tools
+deny_list = [
+    { tool = "everything.delete_file" },
+    { tool = "run_command", regex = ".*;.*" }
+]
+
+# Per-agent overrides
+[agents.restricted]
+provider = "openai"
+model = "gpt4o"
+[agents.restricted.tool_policy]
+allow_list = [{ tool = "run_command", exact = ["ls"] }]
+```
+
+### Entry Types
+- **`tool`**: The name of the tool (e.g., `run_command`, `everything.list_files`). If omitted, `run_command` is assumed.
+- **`exact`**: (For `run_command`) An array of strings representing the program and its arguments.
+- **`regex`**: A regular expression that must match the command string (for `run_command`) or the JSON arguments string (for other tools).
+- **`regex_array`**: (For `run_command`) An array of regular expressions matching parts of the command.
+- **`tags`**: A list of labels associated with the entry.
 
 ## Building from Source
 

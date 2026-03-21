@@ -60,6 +60,30 @@ system_prompt = "You are a test model."
 	assert.Equal(t, "You are a test model.", model.SystemPrompt)
 }
 
+func TestLoadMCPConfig(t *testing.T) {
+	content := `
+[mcp_servers.test-stdio]
+command = "echo"
+args = ["hello"]
+
+[mcp_servers.test-sse]
+url = "http://localhost:8080/sse"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	assert.Contains(t, cfg.MCPServers, "test-stdio")
+	assert.Equal(t, "echo", cfg.MCPServers["test-stdio"].Command)
+	assert.Equal(t, []string{"hello"}, cfg.MCPServers["test-stdio"].Args)
+
+	assert.Contains(t, cfg.MCPServers, "test-sse")
+	assert.Equal(t, "http://localhost:8080/sse", cfg.MCPServers["test-sse"].URL)
+}
+
 func TestGetAgentNotFound(t *testing.T) {
 	cfg, err := config.Load(tempConfigPath(t))
 	require.NoError(t, err)
@@ -83,10 +107,67 @@ func TestProviderAPIKey(t *testing.T) {
 	assert.Equal(t, "test-key-123", p.APIKey())
 }
 
-func TestDefaultConfigPath(t *testing.T) {
-	path := config.DefaultConfigPath()
-	assert.NotEmpty(t, path)
-	assert.Contains(t, path, "zop")
+func TestLoadDisableToolsConfig(t *testing.T) {
+	content := `
+disable_tools = true
+[agents.test]
+provider = "openai"
+model = "gpt4o"
+disable_tools = false
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	assert.True(t, cfg.DisableTools)
+	assert.False(t, cfg.Agents["test"].DisableTools)
+}
+
+func TestGetAgentDefaultFallback(t *testing.T) {
+	content := `
+[agents.z-agent]
+provider = "openai"
+model = "gpt4o"
+
+[agents.a-agent]
+provider = "anthropic"
+model = "claude-sonnet"
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0600))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	// Should fallback to a-agent (first sorted)
+	a, err := cfg.GetAgent("")
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", a.Provider)
+
+	a, err = cfg.GetAgent("default")
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", a.Provider)
+}
+
+func TestLoadZopInstructions(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	zopPath := filepath.Join(dir, "ZOP.md")
+	content := "Test instructions"
+	require.NoError(t, os.WriteFile(zopPath, []byte(content), 0600))
+
+	got, err := config.LoadZopInstructions(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, content, got)
+
+	// Test missing file
+	got, err = config.LoadZopInstructions(filepath.Join(dir, "nonexistent", "config.toml"))
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }
 
 func tempConfigPath(t *testing.T) string {
