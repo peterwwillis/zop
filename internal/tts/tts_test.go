@@ -1,3 +1,5 @@
+//go:build tts
+
 package tts
 
 import (
